@@ -189,6 +189,12 @@ if [ "$COMMIT" -eq 1 ]; then
     read -r ans || ans=""
     [ "$ans" = "yes" ] || { echo "已取消，未下单。" >&2; exit 130; }
   fi
+  # 预览到确认之间可能有人按下 kill switch —— 这正是 kill switch 存在的场景：
+  # 不是"以后别再下"，而是"这一笔现在别下"。所以下单前再判一次。
+  if ! cb_risk_check "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL"; then
+    echo "已在下单前被风控拦下，本笔没有提交。" >&2
+    exit 4
+  fi
   echo "[执行] coinbase orders create"
   coinbase orders create "${ORDER_ARGS[@]}"
   RC=$?

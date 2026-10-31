@@ -80,7 +80,8 @@ with os.fdopen(fd, "a") as f:
 PYRISK
 }
 
-# cb_risk_usage：打印 "<今日已用金额> <本小时已下单数>"
+# cb_risk_usage：打印 "<今日已用金额> <本小时已提交笔数>"
+# 金额只算成功的，笔数算所有尝试（含失败）——两者口径不同，故意的。
 cb_risk_usage() {
   python3 - "$(cb_risk_journal)" <<'PYRISK'
 import json, sys, time
@@ -99,12 +100,13 @@ try:
                 r = json.loads(line)
             except Exception:
                 continue
-            # 只有真正提交给服务端的单子才计入限额；
-            # preview / 被拒绝的 / paper 都不占额度，否则试几次就把额度试没了。
-            if r.get("event") != "exec" or r.get("result") not in ("ok", "accepted", "submitted"):
+            if r.get("event") != "exec":
                 continue
-            if r.get("day") == today:
+            # 金额只算成功提交的：失败的单子没成交，不该吃掉当日额度。
+            if r.get("result") in ("ok", "accepted", "submitted") and r.get("day") == today:
                 spent += float(r.get("notional") or 0)
+            # 笔数算所有提交尝试：限额是为了防止把账户和 API 打爆，
+            # 而失败的尝试同样在打它们 —— 只在成功时才限流等于没限。
             if now - float(r.get("epoch") or 0) <= 3600:
                 last_hour += 1
 except FileNotFoundError:
@@ -159,7 +161,7 @@ sys.exit(0 if float('$spent') + float('$notional') > float('$max_daily') else 1)
   max_hour=$(cb_risk_cfg max_orders_per_hour "")
   if [ -n "$max_hour" ] && [ "$count" -ge "$max_hour" ] 2>/dev/null; then
     cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过每小时上限 $max_hour"
-    cb_bad "风控：达到每小时上限 ${max_hour} —— 最近一小时已提交 ${count} 笔"
+    cb_bad "风控：达到每小时上限 ${max_hour} —— 最近一小时已提交 ${count} 笔（失败的也算）"
     return 4
   fi
 

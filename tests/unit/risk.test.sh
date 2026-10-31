@@ -72,8 +72,19 @@ assert_contains "$out" "dry-run" "下单 50：没有真下单"
 out=$(bash "$R" show 2>&1)
 assert_contains "$out" "今日已用  0.00000000" "额度：dry-run 不占当日额度"
 
+# ---------- 下单前二次判闸（预览到确认之间可能有人按 kill switch） ----------
+# 桩的 orders create 会先 sleep，模拟"预览很慢"；期间把 KILL 放进去，第二次判定必须拦住。
+: > "$JR"
+: > "$STUB_LOG"
+out=$(STUB_PRODUCT="$BTC" bash "$T" BTC-USD BUY 5 --commit --yes 2>&1); rc=$?
+assert_exit "$rc" 0 "无 kill switch 时：真下单能走到 create"
+assert_contains "$out" "[执行] coinbase orders create" "无 kill switch 时：输出里有执行行"
+assert_contains "$(cat "$STUB_LOG" 2>/dev/null)" "orders create" "无 kill switch 时：桩确实收到了 create"
+assert_contains "$(cat "$JR")" '"event": "exec"' "无 kill switch 时：账本记了 exec"
+
 # ---------- 模拟盘 ----------
 : > "$JR"
+: > "$STUB_LOG"          # 上一段真下单也写过日志，这里必须清干净
 out=$(STUB_PRODUCT="$BTC" bash "$T" BTC-USD BUY 50 --paper 2>&1); rc=$?
 assert_exit "$rc" 0 "--paper：退出码 0"
 assert_contains "$out" "[paper]" "--paper：说明这是模拟盘"
@@ -112,6 +123,24 @@ PYJ
 out=$(STUB_PRODUCT="$BTC" bash "$T" BTC-USD BUY 1 2>&1); rc=$?
 assert_exit "$rc" 4 "每小时笔数：已有 2 笔达到上限被拒"
 assert_contains "$out" "每小时" "每小时笔数：说清是哪条限额"
+
+# ---------- 失败的提交也算笔数（金额不算） ----------
+: > "$JR"
+python3 - "$JR" <<'PYJ'
+import json, sys, time
+# 两笔"提交了但失败"：金额不该占额度，但笔数要算 —— 否则 agent 反复打 API 不受限
+for _ in range(2):
+    rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "epoch": int(time.time()),
+           "day": time.strftime("%Y-%m-%d"), "event": "exec", "product": "BTC-USD",
+           "side": "BUY", "type": "market", "notional": 100, "result": "error"}
+    open(sys.argv[1], "a").write(json.dumps(rec) + "\n")
+PYJ
+out=$(STUB_PRODUCT="$BTC" bash "$T" BTC-USD BUY 1 2>&1); rc=$?
+assert_exit "$rc" 4 "失败的两笔：仍然触发每小时笔数上限"
+assert_contains "$out" "每小时上限" "失败的两笔：提示点名每小时上限"
+out=$(bash "$R" show 2>&1)
+assert_contains "$out" "今日已用  0.00000000" "失败的提交：不占当日金额额度"
+assert_contains "$out" "最近一小时 2 笔" "失败的提交：计入最近一小时笔数"
 
 # ---------- reset：归档账本 ----------
 out=$(bash "$R" reset 2>&1); rc=$?

@@ -43,15 +43,21 @@ cb-risk.sh journal 10          # 最近 10 条记录
 只有**真正提交给服务端并成功**的单子（`event=exec`、`result=ok`）占额度。
 这条规则是为了让"先看看"这件事免费：
 
-| 动作 | 记账 | 占额度 |
-|---|---|---|
-| `cb-trade.sh BTC-USD BUY 20`（dry-run） | `preview` | 否 |
-| `cb-trade.sh … --paper` | `paper` | 否 |
-| `cb-trade.sh … --commit` 成功 | `exec` / `ok` | **是** |
-| `cb-trade.sh … --commit` 失败 | `exec` / `error` | 否（没成交） |
-| 被限额拦下 | `block` / `deny` | 否 |
+**金额和笔数的口径不一样，这是故意的：**
 
-反过来说：dry-run 跑一万次也不会把限额跑没，但也不会产生"已用额度"的假象。
+| 动作 | 记账 | 占金额额度 | 占每小时笔数 |
+|---|---|---|---|
+| `cb-trade.sh BTC-USD BUY 20`（dry-run） | `preview` | 否 | 否 |
+| `cb-trade.sh … --paper` | `paper` | 否 | 否 |
+| `cb-trade.sh … --commit` 成功 | `exec` / `ok` | **是** | **是** |
+| `cb-trade.sh … --commit` 失败 | `exec` / `error` | 否（没成交） | **是** |
+| 被限额拦下 | `block` / `deny` | 否 | 否 |
+
+金额只算成交的，因为它衡量"花了多少钱"；笔数算**所有提交尝试**，因为它衡量
+"打了多少次账户和 API"。失败的尝试同样在打服务端 —— 只在成功时才限流，等于没限流。
+余额为 0 时每一笔都会失败，那正是最需要限流的时候。
+
+反过来说：dry-run 跑一万次也不会把额度跑没，但也不会产生"已用额度"的假象。
 
 ## 账本
 

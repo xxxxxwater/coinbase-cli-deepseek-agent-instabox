@@ -84,25 +84,46 @@ cb-risk.sh journal 10          # 最近 10 条记录
 "让 agent 反复试一下"本身就是个坏习惯：试十次、错九次、第十次对了，
 日志里只剩一片噪音。先拦掉明显越界的，再让服务端去看细节。
 
-## 兜底：PATH 上的守卫
+## 兜底：占住 `coinbase` 这个名字的守卫
 
 `cb-trade.sh` 过闸门，但 agent 也能直接敲 `coinbase orders create …`，
-那就绕过了限额。`guard/coinbase` 是一个放在 PATH 前面的透明 wrapper：
+那就绕过了限额。`guard/coinbase` 是个透明的 wrapper，拦 `orders create` /
+`orders cancel`，其余原样转发。
+
+**它不靠 PATH 顺序工作**，这是被真机否掉一版之后才定下来的：`ssh host 'cmd'`
+是非登录 shell、不读 `.bashrc`；`/etc/environment` 里的 PATH 也不作用于这种
+exec 场景。把守卫目录排在 PATH 前面，在 `bash -c`、cron、别的进程里全都可能失效。
+所以正确装法是**把真程序改名，让守卫占住 `coinbase` 这个名字**：
 
 ```bash
-sudo install -m 755 guard/coinbase /data/home/bin/coinbase   # 或者任何在 PATH 前面的目录
-export PATH=/data/home/bin:$PATH
+sudo mv /usr/local/bin/coinbase /usr/local/bin/coinbase-real.js   # 必须留 .js
+sudo install -m 755 guard/coinbase /usr/local/bin/coinbase
 ```
+
+真程序**必须保留 `.js` 扩展名**：这个 CLI 是 Node ESM 脚本，改成 `coinbase.real`
+之类 node 会直接抛 `ERR_UNKNOWN_FILE_EXTENSION` 拒绝执行。守卫按
+`CB_REAL_COINBASE` → 同目录 `coinbase-real.js` → 沿 PATH 找（跳过自己所在目录）
+的顺序定位真程序。
+
+`scripts/coinbase-stack-check.sh` 每次开机都会检查 `CB_GUARD_V1` 标记还在不在：
+`npm i -g` 升级会把 `/usr/local/bin/coinbase` 换回真二进制，守卫就悄悄没了 ——
+而"守卫悄悄消失"和"守卫从没装过"在用户看来都是"能下单"。
 
 行为：
 
 | 调用 | 结果 |
 |---|---|
-| `coinbase --version` / `balance` / `products …` | 原样转发 |
+| `coinbase --version` / `balance` / `products …` / `mcp` | 原样转发 |
 | `coinbase orders preview …` | 原样转发（只读） |
 | `coinbase orders create …` / `orders cancel …` | 先判 kill switch 与产品白名单，通过才转发 |
 | 找不到风控库 | **拒绝**（退出码 78），不是放行 |
-| PATH 里找不到真的 coinbase | 退出码 127，绝不自己 exec 自己 |
+| 白名单开着、但认不出 `product_id` | **拒绝**（退出码 78）——判断不了不等于放行 |
+| 找不到真的 coinbase | 退出码 127，绝不自己 exec 自己 |
+
+`product_id` 的写法要认全：`orders create` 用的是**单等号**
+（`product_id=BTC-USD side=BUY type=market`），而 `balance` 用双等号
+（`portfolio_id==<uuid>`）。守卫原来只匹配双等号，白名单在真机上等于没开 ——
+现在 `product_id=` / `product_id==` / `--product_id=` / `--product_id==` 都认。
 
 刻意**不**在 wrapper 里算金额限额：市价单的名义金额要查行情才知道，
 每拦一次就多打一次 API 是本末倒置。金额归 `cb-trade.sh`，它本来就查过价格。
@@ -111,7 +132,7 @@ export PATH=/data/home/bin:$PATH
 
 - 名义金额是**估算**：市价 SELL 用查询到的价格乘数量，滑点不算在内。
   限额因此是"大概没超标"，不是会计意义上的精确。
-- 装上 PATH 守卫后，`coinbase orders create` 也拦得住（kill switch + 白名单）；
+- 装上守卫后，`coinbase orders create` 也拦得住（kill switch + 白名单）；
   但**金额限额仍然只管 `cb-trade.sh`**。真要在服务端层面兜底，还得靠
   Coinbase 侧的 key 权限（只给某一个组合，让越界操作在服务端就 403）。
 - 没有实现 P&L 熔断（见上）。

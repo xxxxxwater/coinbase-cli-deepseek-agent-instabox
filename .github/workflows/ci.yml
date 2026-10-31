@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +35,7 @@ jobs:
         run: bash tests/run.sh
 
   secret-scan:
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:

@@ -2,6 +2,12 @@
 
 ### Added
 
+- `docs/AGENT-PLAYBOOK.md`：对话手册。收录官方引导语与六个示例提示词
+  （再平衡 / 均值成本 / 披露追踪 / 组合透视 / 周一简报 / x402 深度剖析），
+  逐条标注在这台机器上 ✅ 能跑、⚠️ 部分、✗ 做不到（股票通道 403、Convert 只能
+  default 组合、期货 invalid request、定时任务要 timer），并附 Telegram 14 条
+  命令表与三段真实对话、x402 先看价格再付费的实录。
+
 - 事件收紧：`cb-news.sh` 把"最近有没有 P0"写成标记文件，`cb-risk.sh` 读它，
   P0 之后 `tighten_hours`（默认 6h）内把单笔上限乘 `tighten_factor`（默认 0.25）。
   风控不联网、不重跑新闻；`cb-risk.sh show` 直接显示是否生效，账本理由里注明来源。

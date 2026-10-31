@@ -67,6 +67,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `systemd/*.service` | 两个单元文件 |
 | `docs/COINBASE-SETUP.md` | Coinbase 侧完整排查记录与报错对照表 |
 | `docs/TELEGRAM-RELAY.md` | 中继器运维手册 |
+| `docs/AGENT-PLAYBOOK.md` | **对话手册**：官方 6 个示例提示词逐条对照（哪些能跑、哪些为什么不能）、Telegram 14 条命令的真实对话、给 agent 的系统提示 |
 | `docs/ARCHITECTURE.md` | 分层职责、设计取舍、一次调用的完整链路、开机时序 |
 | `docs/TROUBLESHOOTING.md` | **按报错查**：为什么 → 怎么确认 → 怎么修 |
 | `docs/RISK.md` | 风控闸门与审计日志：规则、什么算额度、为什么闸门在预览之前 |

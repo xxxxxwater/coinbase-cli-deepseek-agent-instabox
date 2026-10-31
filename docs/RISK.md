@@ -128,11 +128,39 @@ sudo install -m 755 guard/coinbase /usr/local/bin/coinbase
 刻意**不**在 wrapper 里算金额限额：市价单的名义金额要查行情才知道，
 每拦一次就多打一次 API 是本末倒置。金额归 `cb-trade.sh`，它本来就查过价格。
 
+## 第二条路：`coinbase mcp` 也要过闸门
+
+二进制守卫拦的是 shell 里的 `coinbase orders create`。但 agent 通常不敲 shell ——
+它连的是 `coinbase mcp` 这个 MCP server（37 个工具，其中有
+`coinbase_orders_create` / `orders_cancel` / `orders_edit` / `orders_close_position` /
+`convert_execute` / `transfer` / `x402_pay` / `portfolios_*`）。
+那个 server 在自己的进程里直接调 API，**二进制守卫对它完全无效**。
+
+所以守卫接管了 `mcp` 这个子命令：`coinbase mcp` 实际启动的是
+`guard/mcp-proxy.mjs`，它把真 server 拉起来做子进程，逐行透传 JSON-RPC，
+只在中途审视 `tools/call`：
+
+| 情况 | 结果 |
+|---|---|
+| 只读工具（`coinbase_balance` / `products_*` / `orders_list` …） | 原样透传 |
+| 会动钱的工具 | 先跑 `cb-risk.sh check <产品> <side> <金额> <类型>`，通过才转发 |
+| 风控拒绝 | 回一个同 id 的 JSON-RPC `error`，真 server 根本收不到这条请求 |
+| 金额算不出来（既没 `quote_size` 也没 `base_size`） | **拒绝**。算不出来不等于 0 |
+| 只有数量没有价格（市价卖出） | 用 `cb-products.sh --ticker` 查一次现价再算 |
+| 风控库不存在 | 拒绝（fail closed） |
+| 代理文件不存在 | `coinbase mcp` 直接 exit 78，不启动没有闸门的 mcp |
+
+两条路共用同一份账本（`journal.jsonl`），所以"shell 路径被拒"和"MCP 路径被拒"
+在审计里是一个口径。
+
+调试：`CB_MCP_PROXY_DEBUG=1 coinbase mcp` 会把每次判定打到 stderr。
+
 ## 已知限制
 
 - 名义金额是**估算**：市价 SELL 用查询到的价格乘数量，滑点不算在内。
   限额因此是"大概没超标"，不是会计意义上的精确。
-- 装上守卫后，`coinbase orders create` 也拦得住（kill switch + 白名单）；
+- 装上守卫后，`coinbase orders create` 和 `coinbase mcp` 两条路都拦得住
+  （kill switch + 白名单 + 单笔上限；MCP 路径连单笔上限也管）；
   但**金额限额仍然只管 `cb-trade.sh`**。真要在服务端层面兜底，还得靠
   Coinbase 侧的 key 权限（只给某一个组合，让越界操作在服务端就 403）。
 - 没有实现 P&L 熔断（见上）。

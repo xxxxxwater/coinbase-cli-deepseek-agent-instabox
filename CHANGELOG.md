@@ -1,3 +1,24 @@
+## [Unreleased]
+
+### Added
+- `guard/mcp-proxy.mjs`：`coinbase mcp` 也过风控闸门。此前二进制守卫只拦得住
+  shell 里的 `orders create`，而 agent 实际是通过 MCP server 下单的 —— 那条路
+  完全绕过限额。现在 `tools/call` 里会动钱的工具（下单/改单/撤单/平仓/兑换/转账/
+  x402 支付/组合增删改）都要先过 `cb-risk.sh check`，两条路径共用一份账本。
+- `cb-risk.sh check` 支持可选的第 4 个参数（订单类型），只为让账本记得更准。
+- `tests/unit/mcpproxy.test.sh`：17 条断言，覆盖透传、闸门、金额算不出来时拒绝、
+  参数顺序、风控库缺失时 fail closed。
+
+### Fixed
+- 守卫接管 `mcp` 时漏了 `child.stdout.pipe(process.stdout)`，客户端只会看到请求
+  发出去、永远等不到响应（`claude mcp list` 报 30 秒超时，看起来像网络问题）。
+- 代理退出时硬 `process.exit()` 会截断管道里还没冲出去的响应，改成记 `exitCode`
+  让事件循环自己排空。
+- 代理调 `cb-risk.sh check` 时参数错位（把类型当成了金额），导致账本写入 python
+  抛 `ValueError` 而**静默丢记录**。现在参数顺序正确，且账本写入失败会大声警告。
+- 开机自检除了恢复守卫，也确认 `coinbase-mcp-proxy.mjs` 在位——缺了它
+  `coinbase mcp` 会 exit 78。
+
 # 变更记录
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，

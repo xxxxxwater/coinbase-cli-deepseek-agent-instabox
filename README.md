@@ -99,13 +99,19 @@ coinbase env                            # 必须显示 * live
 coinbase api-key permissions
 coinbase balance portfolio_id==$COINBASE_PORTFOLIO_ID show_zero==true
 
-# 6. 切模型到 DeepSeek
+# 6. 先设风控限额（agent 会自己拼命令，劝告不算数，闸门才算）
+./scripts/cb-risk.sh set max_single_trade_usd 100
+./scripts/cb-risk.sh set max_orders_per_hour 6
+./scripts/cb-risk.sh show                # 当前限额 + 今日已用 + kill switch
+# 紧急时一条命令关闸：./scripts/cb-risk.sh kill
+
+# 7. 切模型到 DeepSeek
 ./scripts/ds-model.sh --key-file ~/.deepseek-key
 # 写完后开新 shell 验证
 claude -p '只回一个字：好'
 codex exec '只回一个字：好'
 
-# 7. Telegram 中继器
+# 8. Telegram 中继器
 mkdir -p ~/tg-agent && cp telegram/bot.mjs ~/tg-agent/
 cp telegram/config.example.json ~/tg-agent/config.json && chmod 600 ~/tg-agent/config.json
 # 编辑 config.json 填 token / chat_id / deepseek_key

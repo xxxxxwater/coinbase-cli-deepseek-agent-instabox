@@ -54,6 +54,8 @@ const SYSTEM_PROMPT = [
   "如果任务需要较多步骤，先说一句你要做什么，然后直接做。",
   portfolioHint(readPortfolioId()),
   "本机有 IPv6 出口，而 Coinbase 门户白名单只放行了 IPv4 203.0.113.10；所有 Node 进程需带 NODE_OPTIONS=--dns-result-order=ipv4first。该变量已写入系统环境，若某处仍报 401，先确认它在生效。",
+  "下单只走 cb-trade.sh，不要直接调 coinbase orders create —— 前者会先过风控闸门（限额/白名单/kill switch）并记账，后者绕过了这一层。",
+  "想演练或看价格影响时加 --paper（模拟盘，不下单）；真要下单必须显式 --commit。被风控拦下（退出码 4）时不要换参数重试，先把原因回报给用户。",
 ].join("\n");
 
 // ---------- 状态 ----------

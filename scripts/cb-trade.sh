@@ -77,7 +77,7 @@ PROD_JSON=$(coinbase products get "$PRODUCT" 2>&1)
 PTYPE=$(printf '%s' "$PROD_JSON" | cb_json_get product_type)
 [ -n "$PTYPE" ] || cb_die "查询不到产品 ${PRODUCT}：$(printf '%s' "$PROD_JSON" | head -c 200)"
 
-# ---------- 1.5 名义金额与风控闸门 ----------
+# ---------- 1.5 名义金额 ----------
 # 名义金额 = 这笔单子大概动用多少钱。目的只是给限额用，不需要精确到分。
 PRICE=$(printf '%s' "$PROD_JSON" | cb_json_get price)
 NOTIONAL=$(python3 - "$AMOUNT" "$OTYPE" "$LIMIT" "$SIDE" "${PRICE:-0}" <<'PYN'
@@ -101,6 +101,14 @@ echo "产品   : ${PRODUCT}  (${PTYPE})"
 echo "方向   : ${SIDE}   类型: ${OTYPE}$([ "$OTYPE" = limit ] && echo " @ ${LIMIT}")"
 echo "组合   : ${PFX}"
 echo "名义额 : ${NOTIONAL} USD（风控按这个数算限额）"
+
+# ---------- 1.9 风控闸门 ----------
+# 闸门放在余额查询和预览之前：被拦下的单子连读都不必读，
+# 也免得 agent 反复"试一下"把日志写满噪音。
+# cb_risk_check 被拒时自己会记一条 block，这里不要再记一遍（否则一笔被拒算两次）
+if ! cb_risk_check "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL"; then
+  exit 4
+fi
 
 # ---------- 2. 余额 ----------
 BAL_JSON=$(coinbase balance portfolio_id=="$PFX" show_zero==true 2>&1)
@@ -130,13 +138,6 @@ else
   ORDER_ARGS+=(quote_size="$AMOUNT")
 fi
 [ "$PTYPE" = EQUITY ] && ORDER_ARGS+=(equity_trading_session="$SESSION")
-
-# 闸门放在预览之前：预览虽然不下单，但让 agent 反复"试一下"本身就是个坏习惯，
-# 而且真出问题时越早拦住越好。
-# cb_risk_check 被拒时自己会记一条 block，这里不要再记一遍（否则一笔被拒算两次）
-if ! cb_risk_check "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL"; then
-  exit 4
-fi
 
 cb_hr
 case "$PTYPE" in

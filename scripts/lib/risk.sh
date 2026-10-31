@@ -174,3 +174,98 @@ sys.exit(0 if float('$spent') + float('$notional') > float('$max_daily') else 1)
 
   return 0
 }
+
+# cb_risk_report [--days N] [--json]
+# 把账本汇总成人能看的样子。审计的用处不是"有日志"，而是"能回答这一周发生了什么"。
+cb_risk_report() {
+  python3 - "$(cb_risk_journal)" "$@" <<'PYREPORT'
+import json, sys, time
+from collections import Counter, defaultdict
+
+path = sys.argv[1]
+args = sys.argv[2:]
+days = None
+as_json = False
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "--json":
+        as_json = True
+        i += 1
+    elif a == "--days" and i + 1 < len(args):
+        days = int(args[i + 1])
+        i += 2
+    else:
+        print("错误: report 不认识的参数 %s" % a, file=sys.stderr)
+        sys.exit(2)
+
+rows = []
+try:
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+except FileNotFoundError:
+    rows = []
+
+if days:
+    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+    rows = [r for r in rows if (r.get("day") or "") >= cutoff]
+
+by_result = defaultdict(lambda: [0, 0.0])   # key -> [笔数, 金额]
+reasons = Counter()
+by_product = Counter()
+day_min = day_max = None
+for r in rows:
+    key = "%s/%s" % (r.get("event") or "?", r.get("result") or "?")
+    by_result[key][0] += 1
+    try:
+        by_result[key][1] += float(r.get("notional") or 0)
+    except Exception:
+        pass
+    if (r.get("event") or "") == "block":
+        reasons[r.get("reason") or "（未写原因）"] += 1
+        by_product[r.get("product") or "?"] += 1
+    d = r.get("day") or ""
+    if d:
+        day_min = d if day_min is None or d < day_min else day_min
+        day_max = d if day_max is None or d > day_max else day_max
+
+if as_json:
+    out = {
+        "total": len(rows),
+        "range": {"from": day_min, "to": day_max},
+        "by_result": {k: {"count": v[0], "notional": round(v[1], 8)} for k, v in sorted(by_result.items())},
+        "blocked_reasons": dict(reasons.most_common()),
+        "blocked_by_product": dict(by_product.most_common()),
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=False))
+    sys.exit(0)
+
+print("记录: %d 条%s" % (len(rows), "" if not day_min else "（%s ~ %s）" % (day_min, day_max)))
+if not rows:
+    print("账本还是空的：还没有任何预览/提交/模拟盘记录。")
+    sys.exit(0)
+
+print()
+print("按结果:")
+for k in sorted(by_result):
+    c, amt = by_result[k]
+    print("  %-18s %4d 笔  %12.2f USD" % (k, c, amt))
+
+if reasons:
+    print()
+    print("被拒原因:")
+    for why, c in reasons.most_common():
+        print("  %3d × %s" % (c, why))
+    print()
+    print("被拒最多的产品:")
+    for prod, c in by_product.most_common(5):
+        print("  %-12s %d 笔" % (prod, c))
+PYREPORT
+}

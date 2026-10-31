@@ -142,6 +142,40 @@ out=$(bash "$R" show 2>&1)
 assert_contains "$out" "今日已用  0.00000000" "失败的提交：不占当日金额额度"
 assert_contains "$out" "最近一小时 2 笔" "失败的提交：计入最近一小时笔数"
 
+# ---------- report：把账本汇总成人能看的样子 ----------
+# 用一份手写的账本，断言才可复现（前面那些步骤的记录数会随测试改动而变）。
+RT="$TESTDIR/report"
+mkdir -p "$RT"
+cat > "$RT/journal.jsonl" <<'JL'
+{"ts":"2026-10-31T01:00:00Z","epoch":1,"day":"2026-10-31","event":"preview","product":"BTC-USD","side":"BUY","type":"market","notional":50.0,"result":"preview","reason":""}
+{"ts":"2026-10-31T01:01:00Z","epoch":2,"day":"2026-10-31","event":"exec","product":"BTC-USD","side":"BUY","type":"market","notional":50.0,"result":"ok","reason":""}
+{"ts":"2026-10-31T01:02:00Z","epoch":3,"day":"2026-10-31","event":"exec","product":"ETH-USD","side":"BUY","type":"market","notional":100.0,"result":"error","reason":"preview insufficient fund"}
+{"ts":"2026-10-31T01:03:00Z","epoch":4,"day":"2026-10-31","event":"block","product":"SOL-USD","side":"BUY","type":"market","notional":5.0,"result":"deny","reason":"kill switch 开着，所有下单被禁止"}
+{"ts":"2026-10-31T01:04:00Z","epoch":5,"day":"2026-10-31","event":"paper","product":"BTC-USD","side":"SELL","type":"market","notional":7.5,"result":"paper","reason":""}
+JL
+export RCFG="$RT/config.json"
+
+out=$(CB_CONFIG="$RCFG" bash "$R" report 2>&1); rc=$?
+assert_exit "$rc" 0 "report：退出码 0"
+assert_contains "$out" "记录: 5 条" "report：条数正确"
+assert_contains "$out" "按结果:" "report：有按结果分组"
+assert_contains "$out" "exec/ok" "report：能看出成功的提交"
+assert_contains "$out" "被拒原因:" "report：有被拒原因段"
+assert_contains "$out" "kill switch 开着" "report：拒绝原因保留原文"
+assert_contains "$out" "SOL-USD" "report：被拒最多的产品"
+
+out=$(CB_CONFIG="$RCFG" bash "$R" report --json 2>&1)
+if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d["total"]==5 and d["by_result"]["exec/ok"]["count"]==1 and round(d["by_result"]["exec/ok"]["notional"],2)==50.0 else 1)' 2>/dev/null; then
+  ok "report --json：total 与各结果金额都对"
+else
+  bad "report --json：JSON 内容不对" "$(printf '%.200s' "$out")"
+fi
+out=$(CB_CONFIG="$RCFG" bash "$R" report --days 0 2>&1); rc=$?
+assert_exit "$rc" 0 "report --days 0：退出码 0（只看今天也不炸）"
+out=$(CB_CONFIG="$RCFG" bash "$R" report --bogus 2>&1); rc=$?
+assert_exit "$rc" 2 "report：未知参数退出码 2"
+unset RCFG
+
 # ---------- reset：归档账本 ----------
 out=$(bash "$R" reset 2>&1); rc=$?
 assert_exit "$rc" 0 "reset：退出码 0"

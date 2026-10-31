@@ -30,9 +30,13 @@ usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 && !/^#/ { exi
 MODE="show"; ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    show|set|check|kill|resume|reset|journal|path) MODE=$1; shift ;;
+    show|set|check|kill|resume|reset|journal|path|report) MODE=$1; shift ;;
     -h|--help) usage; exit 0 ;;
-    -*) printf '错误: 未知参数 %s（--help 看用法）\n' "$1" >&2; exit 2 ;;
+    -*) case "$1" in
+          --json) ARGS+=("$1"); shift ;;
+          --days) ARGS+=("$1" "${2:-}"); shift 2 ;;
+          *) printf '错误: 未知参数 %s（--help 看用法）\n' "$1" >&2; exit 2 ;;
+        esac ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
@@ -102,6 +106,10 @@ for line in sys.stdin:
         r.get("ts","")[11:19], r.get("event",""), r.get("product",""), r.get("side",""),
         r.get("type",""), r.get("notional",0), r.get("result",""), r.get("reason","")))
 '
+    ;;
+
+  report)
+    cb_risk_report "${ARGS[@]+"${ARGS[@]}"}"
     ;;
 
   show)

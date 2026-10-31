@@ -10,6 +10,13 @@ else
   bad "text.node.mjs 有失败"
 fi
 
+echo "agent.mjs 纯逻辑（参数拼装 / 事件折叠）"
+if node "$ROOT/tests/unit/agent.node.mjs"; then
+  ok "agent.node.mjs 全部通过"
+else
+  bad "agent.node.mjs 有失败"
+fi
+
 echo "语法检查"
 for f in "$ROOT"/telegram/*.mjs "$ROOT"/telegram/lib/*.mjs; do
   [ -f "$f" ] || continue

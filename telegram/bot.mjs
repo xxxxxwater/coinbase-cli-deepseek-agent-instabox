@@ -9,6 +9,14 @@ import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { esc, splitChunks, splitHtml } from "./lib/text.mjs";
+import {
+  buildClaudeArgs as libClaudeArgs,
+  buildCodexArgs as libCodexArgs,
+  buildAgentEnv,
+  initAcc,
+  applyEvent,
+  parseLine,
+} from "./lib/agent.mjs";
 
 const DIR = "/data/home/tg-agent";
 const CONFIG_PATH = join(DIR, "config.json");
@@ -130,43 +138,33 @@ function killRun(chatId) {
   return true;
 }
 
+// 参数拼装与事件折叠在 lib/agent.mjs 里（纯逻辑，可单测）。
+// 这里只负责把会话状态喂进去。
 function buildClaudeArgs(chatId, prompt) {
   const c = chatState(chatId);
-  const args = [
-    "-p",
-    "--output-format", "stream-json",
-    "--include-partial-messages",
-    "--verbose",
-    "--dangerously-skip-permissions",
-    "--append-system-prompt", SYSTEM_PROMPT,
-    "--model", c.model,
-  ];
-  const sid = getSession(chatId);
-  if (sid) args.push("--resume", sid);
-  return { cmd: "claude", args, stdin: prompt };
+  return libClaudeArgs({
+    model: c.model,
+    systemPrompt: SYSTEM_PROMPT,
+    sessionId: getSession(chatId),
+    prompt,
+  });
 }
 
 function buildCodexArgs(chatId, prompt) {
   const c = chatState(chatId);
-  const args = ["exec", "--json", "--skip-git-repo-check", "--model", c.model, prompt];
-  return { cmd: "codex", args, stdin: null };
+  return libCodexArgs({ model: c.model, prompt });
 }
 
 function spawnAgent(chatId, prompt, onDelta, onThinking) {
   const c = chatState(chatId);
   const spec = c.backend === "codex" ? buildCodexArgs(chatId, prompt) : buildClaudeArgs(chatId, prompt);
 
-  const env = {
-    ...process.env,
-    HOME: "/data/home",
-    ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic",
-    ANTHROPIC_AUTH_TOKEN: CFG.deepseek_key || process.env.DEEPSEEK_API_KEY || "",
-    ANTHROPIC_MODEL: c.model,
-    ANTHROPIC_SMALL_FAST_MODEL: c.model,
-    DEEPSEEK_API_KEY: CFG.deepseek_key || process.env.DEEPSEEK_API_KEY || "",
-    DISABLE_AUTOUPDATER: "1",
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-  };
+  const env = buildAgentEnv({
+    model: c.model,
+    deepseekKey: CFG.deepseek_key,
+    baseEnv: process.env,
+    home: "/data/home",
+  });
 
   return new Promise((resolve) => {
     const child = spawn(spec.cmd, spec.args, { cwd: WORKDIR, env, stdio: ["pipe", "pipe", "pipe"] });
@@ -178,14 +176,9 @@ function spawnAgent(chatId, prompt, onDelta, onThinking) {
     }, maxMs);
     child.on("close", () => clearTimeout(hardTimer));
 
-    let acc = "";
-    let thinkChars = 0;
+    let acc = initAcc();
     let errOut = "";
     let buf = "";
-    let sessionId = null;
-    let finalResult = null;
-    let resultUsage = null;
-    let resultError = null;
     let killed = false;
 
     child.on("error", (e) => {
@@ -196,46 +189,15 @@ function spawnAgent(chatId, prompt, onDelta, onThinking) {
       buf += chunk.toString("utf8");
       let idx;
       while ((idx = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, idx).trim();
+        const line = buf.slice(0, idx);
         buf = buf.slice(idx + 1);
-        if (!line || line[0] !== "{") continue;
-        let ev;
-        try { ev = JSON.parse(line); } catch { continue; }
-
-        if (ev.type === "system" && ev.subtype === "init" && ev.session_id) {
-          sessionId = ev.session_id;
-        }
-        // 增量文本
-        if (ev.type === "stream_event" && ev.event) {
-          const e2 = ev.event;
-          if (e2.type === "content_block_delta" && e2.delta) {
-            if (e2.delta.type === "text_delta") {
-              acc += e2.delta.text || "";
-              onDelta(acc);
-            } else if (e2.delta.type === "thinking_delta") {
-              thinkChars += (e2.delta.thinking || "").length;
-              if (onThinking) onThinking(thinkChars);
-            }
-          }
-        }
-        // codex 的增量事件
-        if (ev.type === "item.completed" || ev.type === "item.updated") {
-          const it = ev.item || {};
-          if (it.type === "agent_message" || it.type === "assistant_message") {
-            const t = it.text || it.content || "";
-            if (t && t.length >= acc.length) { acc = t; onDelta(acc); }
-          }
-        }
-        if (ev.type === "result") {
-          if (ev.session_id) sessionId = ev.session_id;
-          if (typeof ev.result === "string" && ev.result.length) finalResult = ev.result;
-          if (ev.usage) resultUsage = ev.usage;
-          if (ev.subtype && ev.subtype !== "success") resultError = ev.subtype + (ev.error ? `: ${ev.error}` : "");
-        }
-        // codex 结束
-        if (ev.type === "turn.completed") {
-          if (ev.usage) resultUsage = ev.usage;
-        }
+        const ev = parseLine(line);
+        if (!ev) continue;
+        const { state, changed } = applyEvent(acc, ev);
+        const beforeThink = acc.thinkChars;
+        acc = state;
+        if (changed) onDelta(acc.text);
+        if (acc.thinkChars !== beforeThink && onThinking) onThinking(acc.thinkChars);
       }
     });
 
@@ -243,9 +205,19 @@ function spawnAgent(chatId, prompt, onDelta, onThinking) {
 
     const finish = (code, signal) => {
       running.delete(String(chatId));
-      if (sessionId) setSession(chatId, sessionId);
-      const text = (finalResult || acc || "").trim();
-      resolve({ ok: !killed && !resultError, text, code, signal, killed, errOut: errOut.trim(), sessionId, usage: resultUsage, resultError });
+      if (acc.sessionId) setSession(chatId, acc.sessionId);
+      const text = (acc.finalResult || acc.text || "").trim();
+      resolve({
+        ok: !killed && !acc.resultError,
+        text,
+        code,
+        signal,
+        killed,
+        errOut: errOut.trim(),
+        sessionId: acc.sessionId,
+        usage: acc.usage,
+        resultError: acc.resultError,
+      });
     };
 
     child.on("close", (code, signal) => finish(code, signal));

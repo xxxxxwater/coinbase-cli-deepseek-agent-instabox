@@ -19,7 +19,7 @@ import {
   parseLine,
 } from "./lib/agent.mjs";
 
-const DIR = "/data/home/tg-agent";
+const DIR = process.env.TG_AGENT_DIR || "/data/home/tg-agent";
 const CONFIG_PATH = join(DIR, "config.json");
 const STATE_PATH = join(DIR, "state.json");
 const CFG = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
@@ -31,7 +31,8 @@ const API = `https://api.telegram.org/bot${TOKEN}`;
 const DEFAULT_BACKEND = CFG.backend || "claude";
 const DEFAULT_MODEL = CFG.model || "deepseek-flash";
 const MODELS = CFG.models || ["deepseek-flash", "deepseek-v4-pro"];
-const WORKDIR = CFG.workdir || "/data/home";
+const HOME = process.env.HOME || "/data/home";
+const WORKDIR = CFG.workdir || HOME;
 const EDIT_MS = CFG.edit_interval_ms || 1200;
 const MAX_TG = 3900;
 
@@ -39,7 +40,7 @@ const MAX_TG = 3900;
 function readPortfolioId() {
   try {
     const p = process.env.CB_CONFIG
-      || join(process.env.HOME || "/data/home", ".config/coinbase-agent/config.json");
+      || join(HOME, ".config/coinbase-agent/config.json");
     return JSON.parse(readFileSync(p, "utf8")).portfolio_id || "";
   } catch {
     return "";
@@ -124,6 +125,8 @@ const COMMANDS = [
   { command: "backend", description: "切换后端 claude / codex" },
   { command: "skills", description: "列出已安装的 skills" },
   { command: "mcp", description: "查看 MCP 服务器连接状态" },
+  { command: "cap", description: "能力面：这把 key 现在能做什么" },
+  { command: "risk", description: "风控限额与今日用量" },
   { command: "id", description: "显示当前 chat id" },
 ];
 
@@ -177,7 +180,7 @@ function spawnAgent(chatId, prompt, onDelta, onThinking) {
     model: c.model,
     deepseekKey: CFG.deepseek_key,
     baseEnv: process.env,
-    home: "/data/home",
+    home: HOME,
   });
 
   return new Promise((resolve) => {
@@ -462,8 +465,54 @@ async function cmdBackend(chatId, arg) {
   await sendText(chatId, `✅ 后端已切到 <code>${arg}</code>`, "HTML");
 }
 
+// 跑仓库里的一个脚本并把输出原样带回 Telegram。
+// 为什么不直接让 agent 去跑：这些脚本的输出是给人看的一张表，
+// 走 agent 会多一层"总结"，把具体数字和 ✗ 项吃掉。
+function runScript(name, args = [], timeoutMs = 120000) {
+  const home = process.env.HOME || "/home/user";
+  const cands = [
+    join(WORKDIR, name),
+    join(home, "bin", name),
+    join(home, ".local", "bin", name),
+  ];
+  const script = cands.find((p) => existsSync(p));
+  if (!script) return Promise.resolve({ code: 127, out: `找不到 ${name}（找过 ${cands.join("、")}）` });
+  return new Promise((resolve) => {
+    const ch = spawn("bash", [script, ...args], {
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    const keep = (b) => { out += b.toString("utf8"); if (out.length > 20000) out = out.slice(0, 20000); };
+    ch.stdout.on("data", keep);
+    ch.stderr.on("data", keep);
+    const timer = setTimeout(() => { try { ch.kill("SIGKILL"); } catch {} }, timeoutMs);
+    ch.on("close", (code) => { clearTimeout(timer); resolve({ code: code ?? -1, out }); });
+    ch.on("error", (e) => { clearTimeout(timer); resolve({ code: 127, out: String(e) }); });
+  });
+}
+
+// 把脚本输出塞进 <pre>：超长时截断并说明，别静默丢内容
+function asPre(text) {
+  const body = text.length > 3600 ? text.slice(0, 3600) + "\n…（输出过长，已截断）" : text;
+  return `<pre>${esc(body)}</pre>`;
+}
+
+async function cmdCap(chatId) {
+  await sendText(chatId, "在探测能力面，大概十几秒…");
+  const { code, out } = await runScript("cb-capability.sh");
+  const tail = code === 0 ? "" : `\n（退出码 ${code}，说明有项不可用）`;
+  await sendText(chatId, asPre(out.trim() + tail), "HTML");
+}
+
+async function cmdRisk(chatId) {
+  const { out } = await runScript("cb-risk.sh", ["show"], 60000);
+  await sendText(chatId, asPre(out.trim()), "HTML");
+}
+
 async function cmdSkills(chatId) {
-  const dirs = ["/data/home/.claude/skills", "/data/home/.codex/skills"];
+  const home = process.env.HOME || "/home/user";
+  const dirs = [`${home}/.claude/skills`, `${home}/.codex/skills`];
   const found = {};
   for (const d of dirs) {
     if (!existsSync(d)) continue;
@@ -484,7 +533,7 @@ async function cmdSkills(chatId) {
 async function cmdMcp(chatId) {
   await sendText(chatId, "⏳ 正在检查 MCP …");
   const out = await new Promise((resolve) => {
-    const p = spawn("claude", ["mcp", "list"], { cwd: WORKDIR, env: { ...process.env, HOME: "/data/home" } });
+    const p = spawn("claude", ["mcp", "list"], { cwd: WORKDIR, env: { ...process.env, HOME } });
     let s = "";
     p.stdout.on("data", (d) => { s += d; });
     p.stderr.on("data", (d) => { s += d; });
@@ -573,6 +622,8 @@ async function handleUpdate(u) {
       case "backend": return cmdBackend(chatId, arg);
       case "skills": return cmdSkills(chatId);
       case "mcp": return cmdMcp(chatId);
+      case "cap": return cmdCap(chatId);
+      case "risk": return cmdRisk(chatId);
       case "id": return sendText(chatId, `chat id：<code>${chatId}</code>`, "HTML");
       default:
         return sendText(chatId, `未知命令 <code>/${esc(cmd)}</code>，发 /help 看全部命令。`, "HTML");

@@ -103,3 +103,25 @@ node telegram/bot.mjs --selftest        # 真跑一次 agent，不碰 Telegram�
 - 白名单只有一个 chat id；其他来源一律拒绝。
 - `claude` 用了 `--dangerously-skip-permissions`：因为要让它能真正读写文件、跑命令、调 MCP。**这等于把服务器 shell 暴露给这个 bot 的对话权**，所以 token 和 `config.json` 必须保密（600，不要提交到 git）。
 - token 泄露的处置：BotFather `/revoke`，然后把新 token 写进 `config.json` 并重启。
+
+## 命令一览（12 条）
+
+| 命令 | 作用 |
+| --- | --- |
+| `/start` `/help` | 介绍与全部命令说明 |
+| `/new` | 开新会话（清空上下文） |
+| `/status` | 当前后端、模型、会话 |
+| `/stop` | 中断正在生成的回答 |
+| `/model` | 查看/切换模型 |
+| `/backend` | 切换 claude / codex |
+| `/skills` | 列出两侧已装 skills |
+| `/mcp` | MCP 连接状态 |
+| `/cap` | **能力面**：这把 key 现在能做什么（跑 `cb-capability.sh`） |
+| `/risk` | **风控**：限额与今日用量（跑 `cb-risk.sh show`） |
+| `/id` | 当前 chat id |
+
+`/cap` 与 `/risk` 是把脚本输出**原样**塞进 `<pre>` 发回来的，不经 agent 总结 ——
+这两张表的用处就在具体数字和 ✗ 项上，多一层"总结"会把它们吃掉。
+
+`runScript()` 依次在 `$WORKDIR`、`$HOME/bin`、`$HOME/.local/bin` 里找脚本，
+找不到就明确说"找不到 X（找过 …）"，而不是假装跑过了。

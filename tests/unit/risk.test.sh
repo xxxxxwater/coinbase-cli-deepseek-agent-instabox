@@ -191,4 +191,32 @@ fi
 n_arch=$(find "$(dirname "$JR")" -name 'journal.jsonl.*.archived' | wc -l | tr -d ' ')
 assert_eq "$n_arch" "1" "reset：归档文件留着（审计不丢）"
 
+# ---------- 账本哈希链：改过就要看得出来 ----------
+R="$ROOT/scripts/cb-risk.sh"
+bash "$R" resume >/dev/null 2>&1
+bash "$R" set max_single_trade_usd 100 >/dev/null 2>&1
+bash "$R" check BTC-USD BUY 5 >/dev/null 2>&1
+bash "$R" kill >/dev/null 2>&1
+bash "$R" check ETH-USD BUY 7 >/dev/null 2>&1
+
+out=$(bash "$R" verify 2>&1); rc=$?
+assert_exit "$rc" 0 "完好账本：verify 退出码 0"
+assert_contains "$out" "哈希链完整" "说清链是完整的"
+
+J=$(bash "$R" path 2>/dev/null | tail -1)
+python3 - "$J" <<'PYTAMPER'
+import json, sys
+p = sys.argv[1]
+lines = open(p, encoding="utf-8").read().splitlines()
+r = json.loads(lines[0]); r["notional"] = 999999.0
+lines[0] = json.dumps(r, ensure_ascii=False)
+open(p, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+PYTAMPER
+out=$(bash "$R" verify 2>&1); rc=$?
+assert_exit "$rc" 1 "被改过的账本：verify 退出码 1"
+assert_contains "$out" "被改过" "指出这一行被改过"
+
+out=$(bash "$R" report 2>&1)
+assert_contains "$out" "账本链" "report 里也报链状态"
+
 finish

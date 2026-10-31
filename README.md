@@ -53,6 +53,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/cb-candles.sh` | K 线 + 一行 sparkline，文字里也能看出走势 |
 | `scripts/cb-capability.sh` | 能力面矩阵：这把 key / 这个组合到底能做什么 |
 | `scripts/cb-x402.sh` | x402 付费数据：先看目录和价格，再决定花不花 |
+| `scripts/cb-news.sh` | 事件流：13 个 RSS/Atom 源 → 按紧急程度排好；源分 A/B/C 信任级别 |
 | `scripts/cb-orders.sh` | 看订单：空态、分页提示、`--open` 只看挂着的；字段名取自 CLI 自己的 Response 契约 |
 | `scripts/cb-risk.sh` | 下单风控闸门：单笔/当日/每小时限额、产品白名单、kill switch、审计日志 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |

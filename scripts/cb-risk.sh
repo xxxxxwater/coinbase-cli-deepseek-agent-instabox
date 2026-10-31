@@ -14,6 +14,7 @@
 #   cb-risk.sh kill                # 立刻禁止所有下单（不删限额配置）
 #   cb-risk.sh resume              # 解除 kill switch
 #   cb-risk.sh reset               # 归档当日账本（限额计数从 0 开始，记录不丢）
+#   cb-risk.sh verify          # 校验账本哈希链（被改过能看出来）
 #   cb-risk.sh journal [N]         # 看最近 N 条（默认 20）
 #   cb-risk.sh path                # 打印账本路径
 #
@@ -31,7 +32,7 @@ usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 && !/^#/ { exi
 MODE="show"; ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    show|set|check|kill|resume|reset|journal|path|report) MODE=$1; shift ;;
+    show|set|check|kill|resume|reset|journal|path|report|verify) MODE=$1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) case "$1" in
           --json) ARGS+=("$1"); shift ;;
@@ -118,6 +119,16 @@ for line in sys.stdin:
 
   report)
     cb_risk_report "${ARGS[@]+"${ARGS[@]}"}"
+    ;;
+
+  verify)
+    out=$(cb_risk_verify); rc=$?
+    case "$rc" in
+      0) cb_ok "$out" ;;
+      2) cb_warn "$out"; printf '旧格式行（早期版本写的）没有哈希链，只能靠内容自洽。\n' >&2 ;;
+      *) cb_bad "$out"; printf '账本可能被手工改过；被改过的账本不能当审计依据。\n' >&2 ;;
+    esac
+    exit "$rc"
     ;;
 
   show)

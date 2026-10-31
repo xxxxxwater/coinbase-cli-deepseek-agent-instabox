@@ -56,7 +56,7 @@ cb_risk_killed() {
 cb_risk_journal_add() {
   local ev=$1 product=$2 side=$3 otype=$4 notional=$5 result=$6 reason=${7:-} extra=${8:-}
   python3 - "$(cb_risk_journal)" "$ev" "$product" "$side" "$otype" "$notional" "$result" "$reason" "$extra" <<'PYRISK'
-import json, os, sys, time
+import hashlib, json, os, sys, time
 path, ev, product, side, otype, notional, result, reason, extra = sys.argv[1:10]
 rec = {
     "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -76,6 +76,26 @@ if extra:
         rec.update(json.loads(extra))
     except Exception:
         rec["extra_raw"] = extra
+# 哈希链：每行带 prev（上一行的 h）与 h（本行内容+prev 的 sha256）。
+# 账本的价值在于"被改过能看出来"——不然它只是一份可以随便编辑的文本。
+def canon(r):
+    body = {k: v for k, v in r.items() if k not in ("prev", "h")}
+    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+prev = ""
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln for ln in f.read().splitlines() if ln.strip()]
+    if lines:
+        prev = json.loads(lines[-1]).get("h", "") or ""
+except FileNotFoundError:
+    prev = ""
+except Exception:
+    prev = ""
+
+rec["prev"] = prev
+rec["h"] = hashlib.sha256((prev + canon(rec)).encode("utf-8")).hexdigest()
+
 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
 with os.fdopen(fd, "a") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -89,6 +109,52 @@ PYRISK
 
 # cb_risk_usage：打印 "<今日已用金额> <本小时已提交笔数>"
 # 金额只算成功的，笔数算所有尝试（含失败）——两者口径不同，故意的。
+# cb_risk_verify: 校验哈希链。返回 0 全部可验证；1 发现断链/被改；2 有旧格式行（不可验证）
+cb_risk_verify() {
+  python3 - "$(cb_risk_journal)" <<'PYVERIFY'
+import hashlib, json, sys
+
+path = sys.argv[1]
+
+def canon(r):
+    body = {k: v for k, v in r.items() if k not in ("prev", "h")}
+    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln for ln in f.read().splitlines() if ln.strip()]
+except FileNotFoundError:
+    print("账本还不存在（0 条记录）")
+    raise SystemExit(0)
+
+prev = ""
+legacy = 0
+for i, ln in enumerate(lines, 1):
+    try:
+        rec = json.loads(ln)
+    except Exception:
+        print("第 %d 行不是 JSON —— 账本被手工改过？" % i)
+        raise SystemExit(1)
+    if "h" not in rec:
+        legacy += 1
+        prev = ""      # 链从这里断开，后面只能看"自洽"
+        continue
+    if rec.get("prev", "") != prev and prev != "":
+        print("第 %d 行 prev 对不上：期望 %s…，实际 %s…" % (i, prev[:12], str(rec.get("prev", ""))[:12]))
+        raise SystemExit(1)
+    want = hashlib.sha256((str(rec.get("prev", "")) + canon(rec)).encode("utf-8")).hexdigest()
+    if want != rec["h"]:
+        print("第 %d 行内容与哈希不符 —— 这一行被改过" % i)
+        raise SystemExit(1)
+    prev = rec["h"]
+
+if legacy:
+    print("共 %d 行，其中 %d 行是旧格式（没有哈希链），这些行无法验证" % (len(lines), legacy))
+    raise SystemExit(2)
+print("共 %d 行，哈希链完整（每行都与前一行相连且内容未改）" % len(lines))
+PYVERIFY
+}
+
 cb_risk_usage() {
   python3 - "$(cb_risk_journal)" <<'PYRISK'
 import json, sys, time
@@ -268,6 +334,34 @@ if not rows:
     print("账本还是空的：还没有任何预览/提交/模拟盘记录。")
     sys.exit(0)
 
+print()
+# 顺手报一句链状态 —— 一份被改过的账本，"统计"越漂亮越危险
+_chain = "未知"
+try:
+    import hashlib as _h
+    _prev = ""
+    _ok = True
+    for _ln in open(sys.argv[1], encoding="utf-8"):
+        _ln = _ln.strip()
+        if not _ln:
+            continue
+        _r = json.loads(_ln)
+        if "h" not in _r:
+            _chain = "含旧格式行（无法验证）"
+            _ok = False
+            break
+        _body = {k: v for k, v in _r.items() if k not in ("prev", "h")}
+        _canon = json.dumps(_body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if _h.sha256((str(_r.get("prev", "")) + _canon).encode()).hexdigest() != _r["h"]:
+            _chain = "第 %d 行被改过" % (_ln and 0 or 0)
+            _ok = False
+            break
+        _prev = _r["h"]
+    else:
+        _chain = "完整" if _ok else "异常"
+except Exception:
+    _chain = "无法检查"
+print("账本链: %s" % _chain)
 print()
 print("按结果:")
 for k in sorted(by_result):

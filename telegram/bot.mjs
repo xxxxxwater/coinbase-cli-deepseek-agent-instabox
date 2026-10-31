@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { esc, splitChunks, splitHtml } from "./lib/text.mjs";
 
 const DIR = "/data/home/tg-agent";
 const CONFIG_PATH = join(DIR, "config.json");
@@ -72,10 +73,6 @@ function setSession(chatId, sid) {
 // ---------- 工具 ----------
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 
-function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 async function tg(method, payload, { silent = false } = {}) {
   const r = await fetch(`${API}/${method}`, {
     method: "POST",
@@ -92,18 +89,7 @@ async function tg(method, payload, { silent = false } = {}) {
   return j.result;
 }
 
-function splitChunks(text, size = MAX_TG) {
-  const out = [];
-  let rest = text;
-  while (rest.length > size) {
-    let cut = rest.lastIndexOf("\n", size);
-    if (cut < size * 0.5) cut = size;
-    out.push(rest.slice(0, cut));
-    rest = rest.slice(cut).replace(/^\n/, "");
-  }
-  if (rest.length) out.push(rest);
-  return out;
-}
+// 切块与转义已抽到 lib/text.mjs（可按转义后长度切，且不切断实体/emoji）
 
 // ---------- 命令定义（中文） ----------
 const COMMANDS = [
@@ -394,12 +380,17 @@ async function handlePrompt(chatId, prompt, messageId) {
   }
   footer.push(`${elapsed}s`);
 
-  const chunks = splitChunks(res.text);
-  for (let i = 0; i < chunks.length; i++) {
-    const isLast = i === chunks.length - 1;
-    const body = `<pre>${esc(chunks[i])}</pre>` + (isLast ? `\n<i>${footer.join(" · ")}</i>` : "");
-    const ok = await trySendHtml(chatId, body);
-    if (!ok) await sendText(chatId, chunks[i]);
+  const htmlChunks = splitHtml(res.text);
+  const rawChunks = splitChunks(res.text);
+  for (let i = 0; i < htmlChunks.length; i++) {
+    const isLast = i === htmlChunks.length - 1;
+    const body = `<pre>${htmlChunks[i]}</pre>` + (isLast ? `\n<i>${footer.join(" · ")}</i>` : "");
+    const sent = await trySendHtml(chatId, body);
+    if (!sent) {
+      // HTML 被拒（极少见）就退回纯文本，内容不能丢
+      const text = rawChunks[i] ?? "";
+      if (text) await sendText(chatId, text);
+    }
   }
 }
 

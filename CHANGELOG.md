@@ -3,6 +3,35 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] — 2026-10-31
+
+补齐"看得见"和"防得住"这两件事。
+
+### 新增
+
+- `scripts/cb-config.sh`：看当前生效的配置值与来源（环境变量 / 文件），
+  `set` / `unset` / `get` / `path` / `--json`。`set portfolio_id` 会先校验 UUID 形状 ——
+  拼错的 UUID 不会立刻报错，而是之后每次调用都 403。
+- `scripts/cb-products.sh`：查交易对。详情 / `--search` / `--quote` / `--ticker` / `--json`。
+  顺带确认 `AAPL-USD` 的 `product_type` 是 `EQUITY` 但行情字段全空 ——
+  股票在 Agent API 上只有"能不能交易"，没有"现在多少钱"。
+- `scripts/lib/config.sh` 增加 `cb_cfg_set` / `cb_cfg_unset`：原子写（临时文件 +
+  `os.replace`），文件 600、目录 700。
+- `tests/unit/install.test.sh`（32 条）、`cbconfig.test.sh`（34 条）、`multibyte.test.sh`（5 条）。
+  现在 9 个测试文件、200+ 条断言，仍然纯离线。
+- 多字节守卫：禁止 `$VAR` 后面直接跟中文标点（bash 3.2 会把它吃进变量名）。
+
+### 修复
+
+- `cb-products.sh` 把服务端的 HTTP 400 `not supported for trading` 当成接口故障，
+  用户把产品名打错时会看到"接口调用失败"，方向完全错。现在归到"查不到"（退出码 3）。
+- `$VAR` 紧跟中文标点导致 `unbound variable`（本版本内又出现两次，已加守卫）。
+
+### 变更
+
+- `Makefile` 的 `shellcheck` 目标与 CI 现在也检查 `tests/` 下的脚本 ——
+  测试脚本里写错不会让 CI 红，只会让测试骗人。
+
 ## [1.1.0] — 2026-10-31
 
 从"一堆能跑的脚本"变成"有测试、有 CI、能自诊断的项目"。

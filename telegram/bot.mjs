@@ -634,7 +634,24 @@ async function main() {
   }
 }
 
-if (process.env.TG_BOT_NO_POLL !== "1") main();
+// 自检模式：跑一次真实的 agent 调用，不碰 Telegram、不写会话状态。
+// 用途：改完代码部署后确认"agent 这条路还是通的"，不用真发一条消息给用户。
+if (process.argv.includes("--selftest")) {
+  const i = process.argv.indexOf("--selftest");
+  const prompt = process.argv[i + 1] || "用一句话说明你能做什么。";
+  let last = "";
+  spawnAgent("selftest", prompt, (t) => { last = t; }, () => {})
+    .then((r) => {
+      log(`自检: ok=${r.ok} code=${r.code} 增量长度=${last.length} 会话=${r.sessionId || "无"}`);
+      if (r.resultError) log(`自检: 错误 ${r.resultError}`);
+      console.log("--- 回复 ---");
+      console.log(r.text || "(空)");
+      process.exit(r.ok ? 0 : 1);
+    })
+    .catch((e) => { log(`自检异常: ${e.message}`); process.exit(1); });
+} else if (process.env.TG_BOT_NO_POLL !== "1") {
+  main();
+}
 
-// 导出给自检用
-export { handleUpdate, handlePrompt, COMMANDS };
+// 导出给自检/测试用
+export { handleUpdate, handlePrompt, COMMANDS, spawnAgent };

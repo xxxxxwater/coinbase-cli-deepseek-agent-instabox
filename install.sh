@@ -50,9 +50,21 @@ command -v bash >/dev/null || die "需要 bash"
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
 [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null || die "需要 Node.js ≥ 22，当前是 $(node -v 2>/dev/null || echo '未安装')"
 say "  node        $(node -v)"
-command -v npm  >/dev/null && say "  npm         $(npm -v)" || say "  npm         未安装（只影响 --skip-cli 之外的情况）"
-command -v python3 >/dev/null && say "  python3     $(python3 -V 2>&1 | awk '{print $2}')" || die "需要 python3（脚本用它解析 JSON）"
-command -v curl >/dev/null && say "  curl        有" || die "需要 curl"
+if command -v npm >/dev/null; then
+  say "  npm         $(npm -v)"
+else
+  say "  npm         未安装（只影响 --skip-cli 之外的情况）"
+fi
+if command -v python3 >/dev/null; then
+  say "  python3     $(python3 -V 2>&1 | awk '{print $2}')"
+else
+  die "需要 python3（脚本用它解析 JSON）"
+fi
+if command -v curl >/dev/null; then
+  say "  curl        有"
+else
+  die "需要 curl"
+fi
 
 # ---------- 2. Coinbase CLI ----------
 step "Coinbase CLI"
@@ -86,7 +98,8 @@ if [ -d "$HERE/scripts/lib" ]; then
     install -m 644 "$f" "$BIN_DIR/lib/$(basename "$f")"
   done
 fi
-say "  已装：$(cd "$BIN_DIR" && ls -1 ./*.sh 2>/dev/null | xargs -n1 basename 2>/dev/null | tr '\n' ' ')"
+# find -exec 而不是 ls|xargs：文件名带空格时不会拆错
+say "  已装：$(find "$BIN_DIR" -maxdepth 1 -name '*.sh' -exec basename {} + 2>/dev/null | sort | tr '\n' ' ')"
 
 case ":${PATH}:" in
   *":${BIN_DIR}:"*) ;;

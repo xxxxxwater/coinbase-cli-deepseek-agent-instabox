@@ -5,6 +5,7 @@ import {
   initAcc,
   applyEvent,
   parseLine,
+  portfolioHint,
 } from "../../telegram/lib/agent.mjs";
 
 let pass = 0, fail = 0;
@@ -143,6 +144,20 @@ const t = (c, m, d) => { c ? ok(m) : bad(m, d); };
     t(r.changed === false && r.state.text === "", "未知事件 " + JSON.stringify(ev) + " 不改变状态");
     st = r.state;
   }
+}
+
+// ---------- 9 组合提示 ----------
+{
+  const withId = portfolioHint("3e4df874-aaaa-bbbb-cccc-000000000000");
+  t(withId.includes("3e4df874-aaaa-bbbb-cccc-000000000000"), "有 UUID 时提示里带真实 UUID");
+  t(withId.includes("show_zero"), "有 UUID 时顺带给出 show_zero");
+  t(!withId.includes("YOUR_PORTFOLIO_UUID"), "不再出现占位符");
+
+  const noId = portfolioHint("");
+  t(!noId.includes("portfolio_id==") || noId.includes("<"), "没有 UUID 时教它自己查，不编造");
+  t(noId.includes("cb-portfolio.sh --show"), "没有 UUID 时指向 cb-portfolio.sh");
+
+  t(portfolioHint(null) === noId && portfolioHint(undefined) === noId, "null/undefined 与空串一致");
 }
 
 console.log(`  -- ${pass} 通过, ${fail} 失败`);

@@ -132,3 +132,21 @@ export function applyEvent(state, ev) {
 
   return { state: st, changed };
 }
+
+/**
+ * 系统提示里"查余额要带哪个组合"的那句话。
+ *
+ * 真实 UUID 不能写进源码（仓库是公开的），但也不能让提示里留个占位符 ——
+ * agent 会照着占位符去拼命令，然后 403。所以运行时从共享配置读，
+ * 读不到才退回"教它怎么自己查"。
+ */
+export function portfolioHint(pfx) {
+  const id = String(pfx || "").trim();
+  if (id) {
+    return `Coinbase CLI 已配好（live 环境），这把 API key 只能访问 Agent MPC 组合。`
+      + `查余额必须带 portfolio_id：coinbase balance portfolio_id==${id} show_zero==true（不传会 403）。`;
+  }
+  return "Coinbase CLI 已配好（live 环境），但这把 API key 只能访问某一个组合，"
+    + "查余额必须带 portfolio_id。先用 cb-portfolio.sh --show 查出组合 UUID，"
+    + "再用 coinbase balance portfolio_id==<那串 UUID>（不传会 403）。";
+}

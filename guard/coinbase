@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CB_GUARD_V1 —— 这个标记用来判断"当前这个 coinbase 是不是守卫"，
 # 开机自检靠它发现被 npm 覆盖掉的守卫并重新装上。
-# coinbase — 放在 PATH 前面的守卫，只拦"提交订单"这一个动作。
+# coinbase — 占住 coinbase 这个名字的守卫：拦"提交订单"，也接管 mcp 子命令。
 #
 # 为什么需要它：cb-trade.sh 会过风控，但 agent 也可以直接调
 # `coinbase orders create …`，那就绕过了所有限额。这个 wrapper 把
@@ -50,6 +50,18 @@ if [ -z "$REAL" ]; then
   echo "coinbase-guard: 找不到真正的 coinbase（同目录的 coinbase-real.js、CB_REAL_COINBASE、PATH 都没有）" >&2
   echo "                PATH=${PATH}" >&2
   exit 127
+fi
+
+# `coinbase mcp` 是另一条下单路径：MCP server 在自己进程里直接调 API，
+# 二进制守卫拦不到它。所以这条命令改走 mcp 代理，由代理去审 JSON-RPC 里的
+# tools/call。代理不存在时**拒绝**而不是放行 —— 没有闸门的 mcp 等于没有风控。
+if [ "${1:-}" = "mcp" ]; then
+  PROXY="${SELF}/coinbase-mcp-proxy.mjs"
+  if [ -f "$PROXY" ]; then
+    CB_REAL_COINBASE="$REAL" exec node "$PROXY" "${@:2}"
+  fi
+  echo "coinbase-guard: 找不到 MCP 代理 $PROXY，拒绝启动 mcp（没有闸门的 mcp 不启动）" >&2
+  exit 78
 fi
 
 # 只有 orders create / orders cancel 这类会改变状态的动作才需要过闸；

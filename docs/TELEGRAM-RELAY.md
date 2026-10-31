@@ -118,6 +118,8 @@ node telegram/bot.mjs --selftest        # 真跑一次 agent，不碰 Telegram�
 | `/mcp` | MCP 连接状态 |
 | `/cap` | **能力面**：这把 key 现在能做什么（跑 `cb-capability.sh`） |
 | `/risk` | **风控**：限额与今日用量（跑 `cb-risk.sh show`） |
+| `/news` | **事件**：官方公告 / 监管 / 主流媒体，按 P0–P3 排（跑 `cb-news.sh`，可 `/news 15` 指定条数） |
+| `/brief` | **一屏态势**：风控 + 余额 + 走势 + 事件（跑 `cb-brief.sh`） |
 | `/id` | 当前 chat id |
 
 `/cap` 与 `/risk` 是把脚本输出**原样**塞进 `<pre>` 发回来的，不经 agent 总结 ——

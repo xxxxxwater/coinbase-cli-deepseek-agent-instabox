@@ -304,8 +304,13 @@ for sid, name, trust, url in targets:
             if SRC:
                 errors.append(f"{sid}: 夹具里没有 {sid}.xml")
             continue
-        parsed = parse_feed(raw)
-        fetched += 1
+        try:
+            parsed = parse_feed(raw)
+            fetched += 1
+        except Exception as e:
+            # 坏 XML 不能把整个脚本带崩：记下这个源坏了，其它源照旧
+            errors.append(f"{sid}: 解析失败 {type(e).__name__}")
+            parsed = entry.get("items", [])
     else:
         headers = {"User-Agent": "cb-news/0.1 (+https://github.com/xxxxxwater/coinbase-cli-deepseek-agent-instabox)"}
         if not NO_CACHE:

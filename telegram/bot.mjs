@@ -127,6 +127,8 @@ const COMMANDS = [
   { command: "mcp", description: "查看 MCP 服务器连接状态" },
   { command: "cap", description: "能力面：这把 key 现在能做什么" },
   { command: "risk", description: "风控限额与今日用量" },
+  { command: "news", description: "市场事件：官方公告 / 监管 / 主流媒体" },
+  { command: "brief", description: "一屏态势：风控 + 余额 + 走势 + 事件" },
   { command: "id", description: "显示当前 chat id" },
 ];
 
@@ -510,6 +512,21 @@ async function cmdRisk(chatId) {
   await sendText(chatId, asPre(out.trim()), "HTML");
 }
 
+async function cmdNews(chatId, arg) {
+  // 允许 /news 12 指定条数
+  const n = /^\d{1,2}$/.test(arg || "") ? arg : "8";
+  const { code, out } = await runScript("cb-news.sh", ["--limit", n], 180000);
+  const tail = code === 0 ? "" : `\n（退出码 ${code}：新闻源可能全挂了）`;
+  await sendText(chatId, asPre(out.trim() + tail), "HTML");
+}
+
+async function cmdBrief(chatId) {
+  await sendText(chatId, "在汇总态势（风控 + 余额 + 走势 + 事件），最多几十秒…");
+  const { code, out } = await runScript("cb-brief.sh", [], 240000);
+  const tail = code === 0 ? "" : "\n（有板块不可用，见上方说明）";
+  await sendText(chatId, asPre(out.trim() + tail), "HTML");
+}
+
 async function cmdSkills(chatId) {
   const home = process.env.HOME || "/home/user";
   const dirs = [`${home}/.claude/skills`, `${home}/.codex/skills`];
@@ -624,6 +641,8 @@ async function handleUpdate(u) {
       case "mcp": return cmdMcp(chatId);
       case "cap": return cmdCap(chatId);
       case "risk": return cmdRisk(chatId);
+      case "news": return cmdNews(chatId, arg);
+      case "brief": return cmdBrief(chatId);
       case "id": return sendText(chatId, `chat id：<code>${chatId}</code>`, "HTML");
       default:
         return sendText(chatId, `未知命令 <code>/${esc(cmd)}</code>，发 /help 看全部命令。`, "HTML");

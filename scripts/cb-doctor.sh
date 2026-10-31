@@ -235,6 +235,39 @@ else
   record warn portfolio.id "还没有可用的组合 UUID" "bash scripts/cb-portfolio.sh --save 自动挑一个存起来"
 fi
 
+# ---- skills：agent 靠这些文档知道有哪些能力，缺了不报错，只是变笨 ----
+_cb=$(command -v coinbase 2>/dev/null || true)
+if [ -n "$_cb" ]; then
+  _bundled=$("$_cb" skills list 2>&1 || true)
+  if printf '%s' "$_bundled" | grep -qi 'No bundled skills found'; then
+    # 这不是"没装"，是 CLI 找不到自己捆绑的 skills/（入口被挪走了）
+    record fail skills.bundled "CLI 说找不到捆绑 skills：入口脚本不在包里了（import.meta.url 解析失败）" \
+      "让守卫指向 \$(npm root -g)/@coinbase/coinbase-cli/dist/index.js（见 docs/GUARD.md）"
+  else
+    _n=$(printf '%s' "$_bundled" | awk 'NR>2 && /^coinbase/ { c++ } END { print c+0 }')
+    if [ "${_n:-0}" -gt 0 ]; then
+      record ok skills.bundled "包内 ${_n} 个 skill 可用"
+    else
+      record warn skills.bundled "没能从 coinbase skills list 解析出 skill 名"
+    fi
+  fi
+  for _side in claude codex; do
+    _d="${HOME}/.${_side}/skills"
+    if [ -d "$_d" ]; then
+      _have=$(find "$_d" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+      if [ "${_have:-0}" -gt 0 ]; then
+        record ok "skills.${_side}" "${_have} 个 skill 在 ${_d}"
+      else
+        record warn "skills.${_side}" "${_d} 是空的" "cb-skills.sh sync"
+      fi
+    else
+      record warn "skills.${_side}" "没有 ${_d}" "cb-skills.sh sync"
+    fi
+  done
+else
+  record skip skills.bundled "没有 coinbase，跳过"
+fi
+
 # ---------- 8.5 风控：守卫在不在、限额设没设 ----------
 # 这两项查的是"你以为有闸门，其实没有"——比起直接报错，这种更危险。
 RISK_LIB="$(dirname "${BASH_SOURCE[0]}")/lib/risk.sh"

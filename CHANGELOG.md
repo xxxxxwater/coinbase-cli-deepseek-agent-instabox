@@ -13,6 +13,10 @@
 
 ### Fixed
 
+- `cb-doctor.sh` 增加 skills 三项（`skills.bundled` / `skills.claude` / `skills.codex`）。
+  `skills.bundled` 专门抓"CLI 谎报没有捆绑 skills"——那是入口脚本被挪走的征兆，
+  而它的表现是 agent 悄悄变笨，不报错。真机现在 20 项通过。
+
 - 守卫把真程序复制成 `/usr/local/bin/coinbase-real.js` 之后，`coinbase skills list`
   开始谎报 `No bundled skills found`、`skills add` 装 0 个：这个 CLI 用
   `import.meta.url` 找自己捆绑的 `skills/`，入口挪了位置就找不到。守卫现在**优先**

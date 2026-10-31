@@ -76,4 +76,16 @@ out=$(HOME="$GHOME" PATH="$GHOME/guardbin:$PATH" COINBASE_KEY_FILE="$TESTDIR/ec.
 assert_contains "$out" "guard.proxy" "代理缺失时报 guard.proxy"
 assert_exit "$rc" 2 "代理缺失属于失败项"
 
+echo "skills：谎报没捆绑 vs 真的没装"
+mkdir -p "$TESTDIR/home/.claude/skills/demo"
+out=$(HOME="$TESTDIR/home" CB_DOCTOR_SKIP_NET=1 bash "$ROOT/scripts/cb-doctor.sh" 2>&1)
+assert_contains "$out" "skills.claude" "报出 claude 侧 skill 数"
+assert_contains "$out" "skills.bundled" "检查包内 skills 是否可见"
+
+# 让桩谎报"没有捆绑 skills" —— 这必须是失败项，因为它意味着 CLI 找不到自己的资源
+STUB_SKILLS="No bundled skills found." HOME="$TESTDIR/home" CB_DOCTOR_SKIP_NET=1 \
+  bash "$ROOT/scripts/cb-doctor.sh" > "$TESTDIR/sk.txt" 2>&1
+assert_contains "$(cat "$TESTDIR/sk.txt")" "skills.bundled" "谎报时仍然报这一项"
+assert_contains "$(cat "$TESTDIR/sk.txt")" "import.meta.url" "解释根因"
+
 finish

@@ -35,6 +35,37 @@ DeepSeek 兼容端点 (api.deepseek.com/anthropic)
 - **会话续接**：每轮把 `session_id` 存进 `state.json`，下一轮 `--resume <id>`，所以上下文连续。
 - **MCP / skills**：直接复用 `~/.claude.json` 和 `~/.claude/skills`，不需要额外配置。
 
+## 代码结构
+
+单文件 600 行的时候，改一处要读三遍才敢动手。现在拆成三块，边界是"能不能单测"：
+
+| 文件 | 职责 | 怎么测 |
+|---|---|---|
+| `telegram/bot.mjs` | 长轮询、消息分发、Telegram API 调用、spawn 子进程 | `--selftest` 真跑一次 |
+| `telegram/lib/agent.mjs` | 参数拼装（claude/codex）、stream-json 事件折叠、组合提示 | 纯函数，64 条断言 |
+| `telegram/lib/text.mjs` | 按**转义后**长度切块、HTML 转义 | 纯函数，22 条断言 |
+
+关键约定：`applyEvent(state, ev)` 返回 `{state, changed}`，**不修改传入的 state**；
+`changed` 只表示正文变了 —— thinking 增量不算，否则每来一个 thinking 包就刷新一次消息，
+Telegram 会限流。
+
+改完代码的验证顺序：
+
+```bash
+node --check telegram/bot.mjs
+bash tests/run.sh                       # 离线，11 秒
+node telegram/bot.mjs --selftest        # 真跑一次 agent，不碰 Telegram、不写会话
+```
+
+`--selftest` 是专门为"部署完想确认 agent 那条路还通，又不想给用户发消息"设计的。
+输出长这样：
+
+```
+[2026-10-31T07:22:49.552Z] 自检: ok=true code=0 增量长度=4 会话=4145fee5-…
+--- 回复 ---
+自检通过
+```
+
 ## 文件
 
 | 路径 | 作用 |

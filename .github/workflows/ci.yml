@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, instabox-medium]
     steps:
       - uses: actions/checkout@v4
 
@@ -17,7 +17,13 @@ jobs:
           node-version: '22'
 
       - name: 安装 shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+        # 自托管 runner 是长期存在的机器，装了就不再重装
+        run: |
+          if command -v shellcheck >/dev/null; then
+            echo "shellcheck $(shellcheck --version | awk '/version:/ {print $2}') 已安装"
+          else
+            sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          fi
 
       - name: 静态检查（shellcheck）
         run: shellcheck scripts/*.sh install.sh
@@ -29,7 +35,7 @@ jobs:
         run: bash tests/run.sh
 
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, instabox-medium]
     steps:
       - uses: actions/checkout@v4
         with:

@@ -1,0 +1,8 @@
+# 我们的脚本大量依赖命令拼接与外部 CLI 输出，逐条说明豁免理由。
+shell=bash
+# SC2086: 故意不加引号的地方都写了注释；其余已修
+disable=SC2086
+# SC1090/SC1091: 运行时 source 的配置/库文件，静态分析看不到
+disable=SC1090,SC1091
+# SC2016: 单引号里含 $ 是有意的（传给 python/shell 子进程）
+disable=SC2016

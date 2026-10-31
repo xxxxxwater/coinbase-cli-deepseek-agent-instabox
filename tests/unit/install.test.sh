@@ -83,4 +83,42 @@ out=$(PATH="$FAKE:$PATH" bash "$I" --prefix "$TESTDIR/p2" --skip-cli --yes 2>&1)
 assert_exit "$rc" 1 "Node 版本太低：退出码 1"
 assert_contains "$out" "需要 Node.js" "Node 版本太低：说清要求"
 
+# ---------- --guard：替换真二进制（用临时目录 + 桩 coinbase 测真路径） ----------
+GD="$TESTDIR/guardbin"; mkdir -p "$GD"
+cat > "$GD/coinbase" <<'STUB'
+#!/usr/bin/env bash
+echo "real coinbase $*"
+STUB
+chmod 755 "$GD/coinbase"
+
+# PATH 里必须解析到同一个 coinbase，否则守卫装了也没人走到它
+out=$(PATH="$GD:$PATH" CB_GUARD_DIR="$GD" bash "$ROOT/install.sh" --prefix "$TESTDIR/g1" --skip-cli --yes --guard 2>&1); rc=$?
+assert_exit "$rc" 0 "--guard：退出码 0（目录可写时不需要 sudo）"
+assert_file_exec "$GD/coinbase" "--guard：coinbase 现在可执行"
+if grep -q 'CB_GUARD_V1' "$GD/coinbase"; then ok "--guard：装上去的是守卫"; else bad "--guard：装上去的不是守卫"; fi
+assert_file_exec "$GD/coinbase-real.js" "--guard：真程序改名成 .js 留着（Node ESM 的硬要求）"
+assert_file "$GD/coinbase-mcp-proxy.mjs" "--guard：MCP 代理也装到同一目录"
+assert_file_exec "$TESTDIR/home/bin/coinbase-guard" "--guard：自愈副本落在 HOME/bin"
+
+out=$("$GD/coinbase" --version 2>&1); rc=$?
+assert_exit "$rc" 0 "--guard：守卫能转发 --version"
+assert_contains "$out" "real coinbase" "--guard：转发到的是真程序"
+
+# 幂等：再跑一次不该把守卫又"替换"一遍
+out=$(PATH="$GD:$PATH" CB_GUARD_DIR="$GD" bash "$ROOT/install.sh" --prefix "$TESTDIR/g2" --skip-cli --yes --guard 2>&1)
+assert_contains "$out" "守卫已经在了" "--guard：重复安装时认出现有守卫"
+
+# coinbase 不在指定目录 → 明确拒绝，不要装一个拦不住的守卫
+out=$(CB_GUARD_DIR="$TESTDIR/nowhere" bash "$ROOT/install.sh" --prefix "$TESTDIR/g3" --skip-cli --yes --guard 2>&1); rc=$?
+assert_exit "$rc" 1 "--guard：位置不对时退出码 1"
+assert_contains "$out" "没找到可执行的 coinbase" "--guard：说清是位置不对"
+
+# PATH 解析到别的 coinbase 时必须拒绝：装了守卫却没人走它，比没装更危险
+OTHER="$TESTDIR/otherbin"; mkdir -p "$OTHER"
+cp "$GD/coinbase-real.js" "$OTHER/coinbase" 2>/dev/null || true
+[[ -f "$OTHER/coinbase" ]] || { printf '#!/bin/sh\n' > "$OTHER/coinbase"; chmod 755 "$OTHER/coinbase"; }
+out=$(PATH="$OTHER:$PATH" CB_GUARD_DIR="$GD" bash "$ROOT/install.sh" --prefix "$TESTDIR/g4" --skip-cli --yes --guard 2>&1); rc=$?
+assert_exit "$rc" 1 "--guard：PATH 指向别处时拒绝安装"
+assert_contains "$out" "不是" "--guard：说清 PATH 里的不是那个文件"
+
 finish

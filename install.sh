@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — 把这一套装到一台新机器上
 #
-# 装什么：Coinbase CLI、四个运维脚本、可选的开机自检 systemd 单元。
+# 装什么：Coinbase CLI、运维脚本、可选的 systemd 单元、可选的二进制层风控守卫。
 # 不装什么：不写 CDP 私钥、不碰用户的 agent 配置、不动已有的 systemd 单元。
 #
 # 用法:
@@ -11,6 +11,7 @@
 #   ./install.sh --systemd             # 同时装 coinbase-stack.service（需要 sudo）
 #   ./install.sh --key-file ~/cdp.json --portfolio <uuid>
 #   ./install.sh --skip-cli            # 跳过 npm 全局安装（离线/已装）
+#   ./install.sh --guard               # 再把 /usr/local/bin/coinbase 换成风控守卫
 #
 # 退出码: 0 成功 / 1 环境不满足 / 2 用户取消 / 3 安装过程出错
 
@@ -23,6 +24,7 @@ BIN_DIR=""
 WITH_SYSTEMD=0
 ASSUME_YES=0
 SKIP_CLI=0
+WITH_GUARD=0
 KEY_FILE=""
 PORTFOLIO=""
 
@@ -32,6 +34,7 @@ while [ $# -gt 0 ]; do
     --systemd)   WITH_SYSTEMD=1; shift ;;
     --yes|-y)    ASSUME_YES=1; shift ;;
     --skip-cli)  SKIP_CLI=1; shift ;;
+    --guard)     WITH_GUARD=1; shift ;;
     --key-file)  KEY_FILE=${2:?}; shift 2 ;;
     --portfolio) PORTFOLIO=${2:?}; shift 2 ;;
     -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -152,6 +155,41 @@ if [ ! -f "$CFG" ]; then
   say "  还没有配置文件（之后可以运行 cb-portfolio.sh --save 自动写入）"
 fi
 
+# ---------- 4.5 风控守卫（可选） ----------
+# 为什么要换掉真二进制：脚本层的风控只在"你用这个脚本"时生效，agent 直接敲
+# `coinbase orders create` 就绕过去了。守卫占住 coinbase 这个名字，
+# 并且把 mcp 子命令接到代理上 —— 那是 agent 真正下单的那条路。
+if [ "$WITH_GUARD" -eq 1 ]; then
+  step "风控守卫"
+  GUARD_DIR="${CB_GUARD_DIR:-/usr/local/bin}"
+  REAL="$GUARD_DIR/coinbase"
+  [ -x "$REAL" ] || die "在 ${REAL} 没找到可执行的 coinbase（先装 CLI，或去掉 --guard）"
+  # PATH 里解析到的必须是同一份文件。否则守卫装上了却没人会走到它 ——
+  # 那比没装更糟：你以为有闸门。
+  FOUND=$(command -v coinbase 2>/dev/null || true)
+  if [ -n "$FOUND" ] && [ "$FOUND" != "$REAL" ]; then
+    die "PATH 里的 coinbase 是 ${FOUND}，不是 ${REAL} —— 守卫只认后者（先把它理顺，或去掉 --guard）"
+  fi
+  # 目录可写就不用 sudo，这样在容器里/测试里也能装。
+  as_root() { if [ -w "$GUARD_DIR" ]; then "$@"; else sudo "$@"; fi; }
+  if grep -q 'CB_GUARD_V1' "$REAL" 2>/dev/null; then
+    say "  守卫已经在了，跳过替换"
+  else
+    # 真程序必须保留 .js 扩展名：这个 CLI 是 Node ESM 脚本，别的扩展名 node 会
+    # 直接抛 ERR_UNKNOWN_FILE_EXTENSION（改名时踩过这个坑）。
+    as_root mv -f "$REAL" "$GUARD_DIR/coinbase-real.js"
+    say "  真程序 → ${GUARD_DIR}/coinbase-real.js"
+  fi
+  as_root install -m 755 "$HERE/guard/coinbase" "$REAL"
+  as_root install -m 644 "$HERE/guard/mcp-proxy.mjs" "$GUARD_DIR/coinbase-mcp-proxy.mjs"
+  # 再放一份在 $HOME/bin：开机自检靠它把被 npm 覆盖掉的守卫装回去。
+  mkdir -p "$HOME/bin"
+  install -m 755 "$HERE/guard/coinbase" "$HOME/bin/coinbase-guard"
+  install -m 644 "$HERE/guard/mcp-proxy.mjs" "$HOME/bin/coinbase-mcp-proxy.mjs"
+  say "  守卫已就位（自愈副本：$HOME/bin/coinbase-guard）"
+  say "  撤销：uninstall.sh --guard"
+fi
+
 # ---------- 5. systemd（可选） ----------
 if [ "$WITH_SYSTEMD" -eq 1 ]; then
   step "开机自检单元"
@@ -196,4 +234,5 @@ say "  下一步："
 say "    1) 把 CDP key 装上：cb-activate-key.sh <key.json>"
 say "    2) 记下可用组合：cb-portfolio.sh --save"
 say "    3) 出问题先跑：cb-doctor.sh"
+[ "$WITH_GUARD" -eq 1 ] && say "    4) 设限额：cb-risk.sh set max_single_trade_usd 100"
 exit 0

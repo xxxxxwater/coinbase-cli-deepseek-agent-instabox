@@ -37,9 +37,12 @@ if grep -q "base_size=0.001" "$STUB_LOG"; then ok "SELL 传 base_size"; else bad
 echo "limit 单带 limit_price"
 : > "$STUB_LOG"
 bash "$TRADE" BTC-USD BUY 0.001 --type limit --limit 50000 >/dev/null 2>&1
-grep -q "limit_price=50000" "$STUB_LOG" && ok "带 limit_price" || bad "缺 limit_price"
-grep -q "portfolio_id=11111111-1111-1111-1111-111111111111" "$STUB_LOG" \
-  && ok "组合 UUID 进到订单参数" || bad "组合 UUID 丢了"
+if grep -q "limit_price=50000" "$STUB_LOG"; then ok "带 limit_price"; else bad "缺 limit_price"; fi
+if grep -q "portfolio_id=11111111-1111-1111-1111-111111111111" "$STUB_LOG"; then
+  ok "组合 UUID 进到订单参数"
+else
+  bad "组合 UUID 丢了"
+fi
 
 echo "股票：走 EQUITY 分支，带上交易时段参数"
 : > "$STUB_LOG"
@@ -52,7 +55,7 @@ echo "--commit 才真下单（脚本化用 --yes 跳过确认）"
 : > "$STUB_LOG"
 out=$(bash "$TRADE" BTC-USD BUY 25 --commit --yes 2>&1); rc=$?
 assert_exit "$rc" "0" "--commit 退出码 0"
-called "orders create" && ok "调了 orders create" || bad "没调用 create"
+if called "orders create"; then ok "调了 orders create"; else bad "没调用 create"; fi
 
 : > "$STUB_LOG"
 echo "缺组合时不下单"

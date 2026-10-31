@@ -42,8 +42,8 @@ echo "JSON 助手"
 assert_eq "$(printf '{"a":"b"}' | cb_json_get a)" "b" "cb_json_get 取字段"
 printf 'not json' | cb_json_get a >/dev/null 2>&1
 assert_exit "$?" "1" "非 JSON 返回 1"
-printf '{"a":1}' | cb_is_json && ok "cb_is_json 认合法 JSON" || bad "cb_is_json 认合法 JSON"
-cb_is_json '{"b":[1,2]}' && ok "cb_is_json 接受参数形式" || bad "cb_is_json 接受参数形式"
-cb_is_json 'not json' && bad "cb_is_json 拒绝坏 JSON" || ok "cb_is_json 拒绝坏 JSON"
+if printf '{"a":1}' | cb_is_json; then ok "cb_is_json 认合法 JSON"; else bad "cb_is_json 认合法 JSON"; fi
+if cb_is_json '{"b":[1,2]}'; then ok "cb_is_json 接受参数形式"; else bad "cb_is_json 接受参数形式"; fi
+if cb_is_json 'not json'; then bad "cb_is_json 拒绝坏 JSON"; else ok "cb_is_json 拒绝坏 JSON"; fi
 
 finish

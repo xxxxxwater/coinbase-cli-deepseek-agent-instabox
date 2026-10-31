@@ -6,6 +6,7 @@ SHELL := /bin/bash
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
 SCRIPTS := $(wildcard scripts/*.sh) install.sh
+TESTS   := $(wildcard tests/*.sh) $(wildcard tests/unit/*.sh)
 .PHONY: version
 version: ## 打印版本号
 	@echo $(VERSION)
@@ -23,6 +24,7 @@ syntax: ## 只做语法检查（bash -n / node --check）
 shellcheck: ## 静态检查（需要 shellcheck）
 	@command -v shellcheck >/dev/null || { echo "未安装 shellcheck"; exit 1; }
 	@shellcheck $(SCRIPTS)
+	@shellcheck $(TESTS)
 
 test: ## 跑全部测试
 	@bash tests/run.sh

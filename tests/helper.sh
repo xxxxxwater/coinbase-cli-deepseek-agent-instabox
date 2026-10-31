@@ -14,6 +14,12 @@ assert_contains() {
 assert_not_contains() {
   case "$1" in *"$2"*) bad "$3" "不该出现 [$2]：$(printf '%.160s' "$1")" ;; *) ok "$3" ;; esac
 }
+assert_file() { # assert_file <路径> <描述>
+  if [ -f "$1" ]; then ok "$2"; else bad "$2（文件不存在）"; fi
+}
+assert_file_exec() { # assert_file_exec <路径> <描述>
+  if [ -x "$1" ]; then ok "$2"; else bad "$2（不存在或没有执行位）"; fi
+}
 assert_exit() {
   if [ "$1" = "$2" ]; then ok "$3"; else bad "$3" "期望退出码 $2，实际 $1"; fi
 }
@@ -73,7 +79,8 @@ STUB
   export NO_COLOR=1
   export CB_CONFIG="$TESTDIR/config.json"
   unset COINBASE_PORTFOLIO_ID COINBASE_KEY_FILE 2>/dev/null || true
-  REPO="$TESTDIR/repo"
+  # ROOT 给各测试文件拼路径用 —— shellcheck 单文件看会以为没用，所以 export
+  export ROOT
   ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 }
 

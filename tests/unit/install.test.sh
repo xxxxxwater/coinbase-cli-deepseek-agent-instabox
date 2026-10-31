@@ -33,9 +33,9 @@ assert_contains "$out" "找不到 key 文件" "key 文件不存在：说清原�
 out=$(bash "$I" --prefix "$PREFIX" --skip-cli --yes 2>&1); rc=$?
 assert_exit "$rc" 0 "安装：退出码 0"
 for s in cb-doctor.sh cb-portfolio.sh cb-trade.sh cb-products.sh cb-activate-key.sh ds-model.sh coinbase-stack-check.sh; do
-  [ -x "$BIN/$s" ] && ok "安装：$s 可执行" || bad "安装：$s 没装上或没执行位"
+  assert_file_exec "$BIN/$s" "安装：$s 可执行"
 done
-[ -f "$BIN/lib/config.sh" ] && ok "安装：共享库 lib/config.sh 一起装了" || bad "安装：lib/config.sh 缺失"
+assert_file "$BIN/lib/config.sh" "安装：共享库 lib/config.sh 一起装了"
 assert_eq "$(stat -c '%a' "$BIN/lib/config.sh" 2>/dev/null || stat -f '%Lp' "$BIN/lib/config.sh")" "644" "安装：lib 是 644（不是可执行）"
 assert_contains "$out" "不在 PATH 里" "安装：提示 BIN_DIR 不在 PATH"
 assert_contains "$out" "下一步" "安装：结尾给了下一步指引"

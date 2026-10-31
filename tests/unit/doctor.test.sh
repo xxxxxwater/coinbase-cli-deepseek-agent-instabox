@@ -22,7 +22,7 @@ mkkey() {  # mkkey <path> <ec|ed25519>
 echo "离线开关：出网检查应记为 skip 而不是 fail"
 out=$(COINBASE_KEY_FILE="$TESTDIR/ec.json" NODE_OPTIONS=--dns-result-order=ipv4first bash "$DOC" 2>&1)
 assert_contains "$out" "已跳过出网检查" "CB_DOCTOR_SKIP_NET=1 时跳过出网检查"
-printf '%s' "$out" | grep -q '✗ net.edge' && bad "跳过时不应报失败" || ok "跳过时不报失败"
+if printf '%s' "$out" | grep -q '✗ net.edge'; then bad "跳过时不应报失败"; else ok "跳过时不报失败"; fi
 
 echo "ECDSA key：key.type 通过"
 mkkey "$TESTDIR/ec.json" ec
@@ -32,7 +32,7 @@ assert_not_contains "$out" "必须换 ECDSA" "不该报 Ed25519 错误"
 
 echo "Ed25519 key：必须明确判失败"
 mkkey "$TESTDIR/ed.json" ed25519
-out=$(COINBASE_KEY_FILE="$TESTDIR/ed.json" NODE_OPTIONS= bash "$DOC" 2>&1); rc=$?
+out=$(COINBASE_KEY_FILE="$TESTDIR/ed.json" NODE_OPTIONS='' bash "$DOC" 2>&1); rc=$?
 assert_contains "$out" "Ed25519" "识别为 Ed25519"
 assert_contains "$out" "不支持" "说明不受支持"
 assert_exit "$rc" "2" "有失败项时退出码 2"

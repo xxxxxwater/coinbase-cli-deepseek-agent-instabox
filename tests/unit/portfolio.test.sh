@@ -51,7 +51,7 @@ assert_contains "$out" "$C" "显示当前组合"
 
 echo "列组合就 401 时给明确指引"
 export STUB_PORTFOLIOS=''
-out=$(COINBASE_PORTFOLIO_ID= bash "$PORT" 2>&1)
+out=$(COINBASE_PORTFOLIO_ID='' bash "$PORT" 2>&1)
 printf '{"x":1}' > "$CB_CONFIG"
 export STUB_PORTFOLIOS='{"error":"unauthorized"}'
 out=$(bash "$PORT" 2>&1); rc=$?

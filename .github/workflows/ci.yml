@@ -27,7 +27,7 @@ jobs:
 
       - name: 静态检查（shellcheck）
         # 测试脚本也一起查 —— 测试里写错不会让 CI 红，只会让测试骗人
-        run: shellcheck scripts/*.sh scripts/lib/*.sh install.sh guard/coinbase tests/*.sh tests/unit/*.sh
+        run: shellcheck scripts/*.sh scripts/lib/*.sh install.sh uninstall.sh guard/coinbase tests/*.sh tests/unit/*.sh
 
       - name: 语法检查
         run: make syntax

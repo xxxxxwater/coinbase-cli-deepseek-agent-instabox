@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, instabox-medium]
+    runs-on: instabox-medium
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +35,7 @@ jobs:
         run: bash tests/run.sh
 
   secret-scan:
-    runs-on: [self-hosted, instabox-medium]
+    runs-on: instabox-medium
     steps:
       - uses: actions/checkout@v4
         with:

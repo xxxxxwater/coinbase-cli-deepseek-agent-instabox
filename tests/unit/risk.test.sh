@@ -219,4 +219,34 @@ assert_contains "$out" "被改过" "指出这一行被改过"
 out=$(bash "$R" report 2>&1)
 assert_contains "$out" "账本链" "report 里也报链状态"
 
+echo "== 事件收紧（P0 之后自动降上限）=="
+P0="$TESTDIR/p0.json"
+export CB_NEWS_P0_FILE="$P0"
+# 用一份全新的配置与账本，免得前面用例设的每小时上限/白名单在这里抢先拦
+export CB_CONFIG="$TESTDIR/tighten/config.json"
+mkdir -p "$TESTDIR/tighten"; : > "$TESTDIR/tighten/.keep"
+CB_CONFIG="$TESTDIR/tighten/config.json"
+bash "$R" set max_single_trade_usd 100 >/dev/null 2>&1
+bash "$R" set tighten_on_p0 true >/dev/null 2>&1
+python3 -c "import json,time;json.dump({'count':2,'latest':int(time.time())-300},open('$P0','w'))"
+out=$(bash "$R" check BTC-USD BUY 50 2>&1); rc=$?
+assert_exit "$rc" 4 "有新鲜 P0 时，50 超过被打折的上限 25 → 被拒"
+assert_contains "$out" "事件收紧" "拒绝理由要说清是事件收紧，不是普通超限"
+out=$(bash "$R" show 2>&1)
+assert_contains "$out" "事件收紧: 生效" "show 里能看到事件收紧在生效"
+python3 -c "import json,time;json.dump({'count':2,'latest':int(time.time())-7*3600},open('$P0','w'))"
+out=$(bash "$R" check BTC-USD BUY 50 2>&1); rc=$?
+assert_exit "$rc" 0 "P0 已过 7 小时（窗口 6h），不再收紧"
+bash "$R" set tighten_on_p0 false >/dev/null 2>&1
+python3 -c "import json,time;json.dump({'count':2,'latest':int(time.time())-300},open('$P0','w'))"
+out=$(bash "$R" check BTC-USD BUY 50 2>&1); rc=$?
+assert_exit "$rc" 0 "关掉开关后即使有新鲜 P0 也按原上限"
+bash "$R" set tighten_hours 12 >/dev/null 2>&1
+bash "$R" set tighten_on_p0 true >/dev/null 2>&1
+python3 -c "import json,time;json.dump({'count':1,'latest':int(time.time())-7*3600},open('$P0','w'))"
+out=$(bash "$R" check BTC-USD BUY 50 2>&1); rc=$?
+assert_exit "$rc" 4 "把窗口调到 12h 后，7 小时前的 P0 又生效了"
+rm -f "$P0"
+unset CB_NEWS_P0_FILE
+
 finish

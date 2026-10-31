@@ -188,6 +188,52 @@ print("%.8f %d" % (spent, last_hour))
 PYRISK
 }
 
+
+# cb_risk_p0_file：cb-news.sh 写的 P0 标记文件（同一路径，风控不联网）
+cb_risk_p0_file() {
+  printf '%s' "${CB_NEWS_P0_FILE:-${XDG_CACHE_HOME:-$HOME/.cache}/coinbase-agent/p0.json}"
+}
+
+# cb_risk_p0_info：回显 "计数 最新epoch"；读不到就是 "0 0"
+cb_risk_p0_info() {
+  local f
+  f=$(cb_risk_p0_file)
+  if [ ! -f "$f" ]; then printf '0 0'; return 0; fi
+  python3 - "$f" <<'PY2' 2>/dev/null || printf '0 0'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+    print(int(d.get("count") or 0), int(d.get("latest") or 0))
+except Exception:
+    print(0, 0)
+PY2
+}
+
+# cb_risk_tighten_state：回显 "<on|off> <factor> <count> <age秒>"
+# 生效条件：开关打开 + 标记里有 P0 + 最新 P0 落在 tighten_hours 之内
+cb_risk_tighten_state() {
+  local on hours factor count latest now age
+  on=$(cb_risk_cfg tighten_on_p0 true)
+  case "$on" in
+    true|1|yes) ;;
+    *) printf 'off 1 0 0'; return 0 ;;
+  esac
+  hours=$(cb_risk_cfg tighten_hours 6)
+  factor=$(cb_risk_cfg tighten_factor 0.25)
+  read -r count latest <<EOF
+$(cb_risk_p0_info)
+EOF
+  case "${count:-0}" in ''|*[!0-9]*) count=0 ;; esac
+  case "${latest:-0}" in ''|*[!0-9]*) latest=0 ;; esac
+  now=$(date +%s)
+  age=$(( now - latest ))
+  if [ "$count" -gt 0 ] && [ "$latest" -gt 0 ] && [ "$age" -ge 0 ] && [ "$age" -lt $(( hours * 3600 )) ]; then
+    printf 'on %s %s %s' "$factor" "$count" "$age"
+  else
+    printf 'off %s %s %s' "$factor" "$count" "$age"
+  fi
+}
+
 # cb_risk_check <产品> <BUY|SELL> <类型> <名义金额>
 # 通过返回 0；被拒打印原因并返回 4。规则全部来自配置，没有硬编码的魔法数。
 cb_risk_check() {
@@ -200,10 +246,19 @@ cb_risk_check() {
     return 4
   fi
 
+  local t_on t_factor t_count t_age note
+  read -r t_on t_factor t_count t_age <<EOF
+$(cb_risk_tighten_state)
+EOF
+  note=""
   max_single=$(cb_risk_cfg max_single_trade_usd "")
+  if [ "$t_on" = "on" ] && [ -n "$max_single" ]; then
+    max_single=$(python3 -c "print('%.8f' % (float('$max_single') * float('$t_factor')))" 2>/dev/null || printf '%s' "$max_single")
+    note="（事件收紧：${t_count} 条 P0 在 $(( t_age / 60 )) 分钟前，上限 ×${t_factor}）"
+  fi
   if [ -n "$max_single" ] && python3 -c "import sys; sys.exit(0 if float('$notional') > float('$max_single') else 1)" 2>/dev/null; then
-    cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过单笔上限 $max_single"
-    cb_bad "风控：本笔名义金额 ${notional} 超过单笔上限 ${max_single} —— cb-risk.sh show 看当前限额"
+    cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过单笔上限 $max_single${note}"
+    cb_bad "风控：本笔名义金额 ${notional} 超过单笔上限 ${max_single}${note} —— cb-risk.sh show 看当前限额"
     return 4
   fi
 

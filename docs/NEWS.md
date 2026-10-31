@@ -109,3 +109,10 @@ crash in 2018` 不是新事件 —— 它值得读，但不该像事故一样打
 Telegram 里可以直接 `/news`（默认 8 条，`/news 15` 指定条数）或 `/brief`。
 
 它们都是**只读**的：`cb-news.sh` 不联网下单、不碰账户、不花钱。
+
+## 它还会留下一个标记给风控
+
+每次运行会在 `${XDG_CACHE_HOME:-~/.cache}/coinbase-agent/p0.json` 写一份事实记录
+（`{"count": N, "latest": <epoch>, "checked": ..., "since": ...}`，权限 600）。
+`cb-risk.sh` 读它来实现「P0 之后自动降上限」，这样风控不必自己去联网拉 RSS ——
+详见 [RISK.md](RISK.md) 的「事件收紧」一节。

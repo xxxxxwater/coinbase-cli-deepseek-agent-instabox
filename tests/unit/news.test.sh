@@ -157,5 +157,17 @@ assert_eq "$perms" "600" "缓存文件权限 600（只自己可读）"
 out=$(CB_NEWS_FIXTURE_DIR="$FIX" bash "$N" --json | python3 -c 'import json,sys;d=json.load(sys.stdin);print("srcs=%d"%len(d["items"]))')
 assert_contains "$out" "srcs=" "重复运行不炸（缓存可复用）"
 
+echo "== P0 标记文件（给风控读，不让风控联网）=="
+MK="$TESTDIR/p0.json"
+CB_NEWS_FIXTURE_DIR="$FIX" CB_NEWS_P0_FILE="$MK" bash "$N" >/dev/null 2>&1
+assert_file "$MK" "跑完会写 P0 标记"
+if python3 -c "import json,sys;d=json.load(open('$MK'));sys.exit(0 if d['count']>=1 and d['latest']>0 else 1)" 2>/dev/null; then
+  ok "标记里有 P0 计数与最新时间"
+else
+  bad "标记内容不对" "$(cat "$MK" 2>/dev/null)"
+fi
+perms=$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode)[-3:])' "$MK" 2>/dev/null)
+assert_eq "$perms" "600" "标记文件权限 600"
+
 teardown
 finish

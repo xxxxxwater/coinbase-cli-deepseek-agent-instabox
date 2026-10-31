@@ -2,6 +2,11 @@
 
 ### Added
 
+- 事件收紧：`cb-news.sh` 把"最近有没有 P0"写成标记文件，`cb-risk.sh` 读它，
+  P0 之后 `tighten_hours`（默认 6h）内把单笔上限乘 `tighten_factor`（默认 0.25）。
+  风控不联网、不重跑新闻；`cb-risk.sh show` 直接显示是否生效，账本理由里注明来源。
+  开关 `tighten_on_p0`（默认 true）。7 条新断言。
+
 - `scripts/cb-market.sh`：市场状态一屏（情绪 / 总量 / 流动性 / 杠杆 / 链上拥堵）。
   只接实测从目标机拿得到的免费源（alternative.me、coingecko、llama.fi、
   mempool.space、okx 资金费率）；币安/Bybit/Deribit 在该出口 IP 上被地区封锁

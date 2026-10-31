@@ -50,11 +50,11 @@ case "$MODE" in
     [ ${#ARGS[@]} -ge 2 ] || { printf '错误: set 需要 <键> <值>\n' >&2; exit 2; }
     k=${ARGS[0]}; v=${ARGS[1]}
     case "$k" in
-      max_single_trade_usd|max_daily_usd|max_orders_per_hour)
+      max_single_trade_usd|max_daily_usd|max_orders_per_hour|tighten_hours|tighten_factor)
         printf '%s' "$v" | grep -Eq '^[0-9]+([.][0-9]+)?$' || {
           printf '错误: %s 要是非负数字（收到 %s）\n' "$k" "$v" >&2; exit 2; } ;;
       allowed_products) ;;
-      allow_non_usd_transfer|max_transfer_usd)
+      allow_non_usd_transfer|tighten_on_p0|max_transfer_usd)
         if [ "$k" = "max_transfer_usd" ]; then
           printf '%s' "$v" | grep -Eq '^[0-9]+([.][0-9]+)?$' || {
             printf '错误: %s 要是非负数字（收到 %s）\n' "$k" "$v" >&2; exit 2; }
@@ -136,8 +136,17 @@ for line in sys.stdin:
     echo "账本: $j"
     [ -f "$j" ] && printf '记录: %s 条\n' "$(wc -l < "$j" | tr -d ' ')" || echo "记录: 0 条"
     if cb_risk_killed; then cb_bad "kill switch: 开着（下单被禁止）"; else cb_ok "kill switch: 关着（可下单）"; fi
+    _t_on=off; _t_factor=1; _t_count=0; _t_age=0
+    read -r _t_on _t_factor _t_count _t_age <<EOF
+$(cb_risk_tighten_state)
+EOF
+    if [ "$_t_on" = "on" ]; then
+      cb_warn "事件收紧: 生效 —— ${_t_count} 条 P0 在 $(( _t_age / 60 )) 分钟前，单笔上限 ×${_t_factor}（cb-risk.sh set tighten_on_p0 false 可关）"
+    else
+      cb_dim "事件收紧: 未生效（P0 标记 ${_t_count} 条；跑一次 cb-news.sh 会更新）"
+    fi
     cb_hr
-    for k in max_single_trade_usd max_daily_usd max_orders_per_hour max_transfer_usd allowed_products allow_non_usd_transfer; do
+    for k in max_single_trade_usd max_daily_usd max_orders_per_hour max_transfer_usd allowed_products allow_non_usd_transfer tighten_on_p0 tighten_hours tighten_factor; do
       v=$(cb_risk_cfg "$k" "")
       if [ -n "$v" ]; then
         printf '%-22s %s\n' "$k" "$v"
@@ -145,6 +154,9 @@ for line in sys.stdin:
         # 布尔键"没设置"不等于"不限"——它有个安全默认值，得如实说
         case "$k" in
           allow_non_usd_transfer) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置（默认 false：非稳定币 transfer 不允许）${CB_C_OFF}" ;;
+          tighten_on_p0) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置（默认 true：P0 事件后自动收紧）${CB_C_OFF}" ;;
+          tighten_hours) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置（默认 6 小时）${CB_C_OFF}" ;;
+          tighten_factor) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置（默认 0.25，即上限打 2.5 折）${CB_C_OFF}" ;;
           *) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置，不限${CB_C_OFF}" ;;
         esac
       fi

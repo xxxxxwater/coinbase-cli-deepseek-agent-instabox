@@ -67,6 +67,9 @@ case "$SINCE" in
   *) printf '错误: --since 要写成 6h / 48h / 7d 这种形式\n' >&2; exit 2 ;;
 esac
 
+# 风控要读的"最近有没有 P0"标记；路径固定，风控不必联网
+export CB_NEWS_P0_FILE="${CB_NEWS_P0_FILE:-${XDG_CACHE_HOME:-$HOME/.cache}/coinbase-agent/p0.json}"
+
 cb_need python3
 
 if [ "$LIST_SRC" -eq 1 ]; then
@@ -428,6 +431,25 @@ if not kept:
     for e in errors[:3]:
         print(f"  （{e}）", file=sys.stderr)
     raise SystemExit(0)
+
+
+# 把"最近有没有 P0"落成一个小标记文件，供风控读取（风控不该为此联网）。
+# 只写事实（数量 + 最新一条的时间），不写判断；判断留给 cb_risk_tighten_state。
+_p0_file = os.environ.get("CB_NEWS_P0_FILE", "")
+if _p0_file:
+    try:
+        _p0 = [it for it in kept if it["priority"] == "P0"]
+        _payload = {"count": len(_p0),
+                    "latest": max([it["epoch"] for it in _p0], default=0),
+                    "checked": int(NOW), "since": SINCE}
+        _dir = os.path.dirname(_p0_file)
+        if _dir:
+            os.makedirs(_dir, mode=0o700, exist_ok=True)
+        _fd = os.open(_p0_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _f:
+            json.dump(_payload, _f, ensure_ascii=False)
+    except Exception:
+        pass  # 标记写不进去不该影响看新闻
 
 ICON = {"P0": "!!!", "P1": "!! ", "P2": "!  ", "P3": "   "}
 print(f"市场事件（最近 {SINCE}，{len(kept)} 条；抓取 {fetched} 源，304 复用 {not_modified}）")

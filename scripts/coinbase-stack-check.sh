@@ -19,8 +19,19 @@ HOME_DIR=/data/home
 KEY=$HOME_DIR/cdp_api_key_ecdsa.json
 LOG=$HOME_DIR/.coinbase-stack.log
 STATUS=$HOME_DIR/.coinbase-stack-status.json
-PFX=${COINBASE_PORTFOLIO_ID:-YOUR_PORTFOLIO_UUID}
-# 若未设置 COINBASE_PORTFOLIO_ID，则跳过 balance 一项（不会判失败），其余照常自检。
+# portfolio_id 的来源，按优先级：
+#   1) 环境变量 COINBASE_PORTFOLIO_ID（显式指定）
+#   2) 配置文件（cb-portfolio.sh --save / cb-config.sh set 写的那份）
+# 只认环境变量会让开机自检永远"跳过 balance"——明明配置里有，却假装没配，
+# 那样这条自检就成了摆设。
+PFX=${COINBASE_PORTFOLIO_ID:-}
+if [ -z "$PFX" ] && [ -f "$HOME_DIR/lib/config.sh" ]; then
+  # 显式指定配置文件：此刻 HOME 还没被改成 HOME_DIR，靠默认路径会读错地方
+  [ -n "${CB_CONFIG:-}" ] || export CB_CONFIG="$HOME_DIR/.config/coinbase-agent/config.json"
+  # shellcheck disable=SC1091
+  . "$HOME_DIR/lib/config.sh" 2>/dev/null && PFX=$(cb_portfolio_id 2>/dev/null || true)
+fi
+[ -n "$PFX" ] || PFX="YOUR_PORTFOLIO_UUID"
 PFX_OK=1; [ "$PFX" = "YOUR_PORTFOLIO_UUID" ] && PFX_OK=0
 NODE_OPT='--dns-result-order=ipv4first'
 
@@ -49,7 +60,7 @@ nopt=$(grep -c 'dns-result-order=ipv4first' /etc/environment 2>/dev/null || echo
 if [ "$nopt" -ge 1 ]; then check 0 node_options; else check 1 node_options; fi
 
 # ---------- 2. coinbase 二进制 ----------
-if [ ! -e /usr/local/bin/coinbase ]; then
+if [ ! -e /usr/local/bin/coinbase ] && [ ! -e /usr/local/bin/coinbase-real.js ]; then
   say "coinbase 缺失，重装 npm 包"
   # 日志文件是当前用户所有，重定向故意留在这层；
   # shellcheck disable=SC2024
@@ -57,6 +68,30 @@ if [ ! -e /usr/local/bin/coinbase ]; then
 fi
 ver=$(timeout 60 coinbase --version 2>&1 | tr -d '\n')
 if [ -n "$ver" ]; then check 0 "cli($ver)"; else check 1 cli; fi
+
+# ---------- 2.5 风控守卫是否还在原位 ----------
+# npm 升级会把 /usr/local/bin/coinbase 换回真二进制，守卫就没了 ——
+# 而"守卫悄悄消失"比"守卫从没装过"更危险：两者看起来都是能下单。
+# 所以每次开机都确认一遍，发现被覆盖就重新装回去。
+GUARD_SRC="$HOME_DIR/bin/coinbase-guard"
+if [ -f "$GUARD_SRC" ]; then
+  if grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
+    check 0 guard
+  else
+    say "风控守卫被覆盖了，正在恢复"
+    # 真程序必须叫 .js：这个 CLI 是 Node ESM 脚本，别的扩展名 node 会直接拒绝
+    # （ERR_UNKNOWN_FILE_EXTENSION），改名时踩过这个坑。
+    if [ -x /usr/local/bin/coinbase ]; then
+      sudo -n mv -f /usr/local/bin/coinbase /usr/local/bin/coinbase-real.js >/dev/null 2>&1
+    fi
+    if sudo -n install -m 755 "$GUARD_SRC" /usr/local/bin/coinbase >/dev/null 2>&1 \
+       && grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
+      check 0 "guard(restored)"
+    else
+      check 1 guard
+    fi
+  fi
+fi
 
 # ---------- 3. key 文件 ----------
 if [ -f "$KEY" ]; then
@@ -114,7 +149,7 @@ esac
 bal_rc=1
 ran_bal=0
 if [ "$fail" -eq 0 ] && [ "$PFX_OK" -eq 0 ]; then
-  say "跳过 balance：未设置 COINBASE_PORTFOLIO_ID（其余项不受影响）"
+  say "跳过 balance：环境变量与配置里都没有 portfolio_id（其余项不受影响）"
 elif [ "$fail" -eq 0 ]; then
   ran_bal=1
   bel=""

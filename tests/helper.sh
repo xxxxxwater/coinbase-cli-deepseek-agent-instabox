@@ -79,6 +79,12 @@ coinbase-trading      yes         spot orders}" ;;
           AAPL-USD|TSLA-USD) echo '{"product_id":"'"$3"'","product_type":"EQUITY"}' ;;
           *) echo '{"product_id":"'"$3"'","product_type":"SPOT"}' ;;
         esac ;;
+      candles)
+        # 默认给 3 根上升的 K 线；STUB_CANDLES 可覆盖；股票给空数组（真机行为）
+        if [ -n "${STUB_CANDLES:-}" ]; then printf '%s\n' "$STUB_CANDLES"
+        elif [ "$3" = "AAPL-USD" ]; then printf '%s\n' '{"candles":[]}'
+        else printf '%s\n' '{"candles":[{"start":"1700000000","low":"100","high":"110","open":"100","close":"105","volume":"1"},{"start":"1700003600","low":"105","high":"115","open":"105","close":"112","volume":"2"},{"start":"1700007200","low":"110","high":"120","open":"112","close":"118","volume":"3"}]}'
+        fi ;;
       list)
         if [ -n "${STUB_PRODUCTS:-}" ]; then printf '%s\n' "$STUB_PRODUCTS"
         else echo '{"products":[],"num_products":0}'; fi ;;

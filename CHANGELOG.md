@@ -2,6 +2,11 @@
 
 ### Added
 
+- `scripts/cb-candles.sh`：K 线。给 OHLCV 的同时画一条 sparkline —— agent 拿一屏
+  JSON 看不出形状，一行块字符能。`--granularity` / `--limit` / `--json`。
+  两处刻意区分：股票（EQUITY）没有 K 线接口 ≠ 该区间无成交；服务端错误负载也是
+  JSON，不能当"成功但没数据"渲染（否则失败被伪装成空结果）。22 条断言。
+
 - `scripts/cb-skills.sh`：管 agent skills。`verify` 逐个检查 claude 与 codex 两侧是否
   在位，`sync` 重新从 CLI 包安装。**能分辨"真缺失"与"CLI 谎报没捆绑"**（后者退出码 3
   并解释根因），因为这两种情况修法完全不同。16 条断言。

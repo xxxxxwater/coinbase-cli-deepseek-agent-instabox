@@ -36,16 +36,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 BIN_DIR="${PREFIX}/bin"
-# 防手滑：PREFIX 为 / 时 BIN_DIR 是 /bin，下面的 rm -rf 会动系统目录。
-case "$BIN_DIR" in
-  "/bin"|"/usr/bin"|"/usr/local") die "PREFIX 看起来是系统目录（${BIN_DIR}），拒绝执行" ;;
-esac
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/coinbase-agent"
 GUARD_DIR="${CB_GUARD_DIR:-/usr/local/bin}"
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n▶ %s\n' "$*"; }
 die()  { printf '✗ %s\n' "$*" >&2; exit 1; }
+
+# 防手滑：PREFIX 为 / 时 BIN_DIR 是 /bin，下面的 rm -rf 会动系统目录。
+case "$BIN_DIR" in
+  "/bin"|"/usr/bin"|"/usr/local") die "PREFIX 看起来是系统目录（${BIN_DIR}），拒绝执行" ;;
+esac
 
 # ---------- 先算清要做什么 ----------
 PLAN=()

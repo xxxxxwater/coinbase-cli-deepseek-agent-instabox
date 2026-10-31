@@ -218,6 +218,18 @@ Wants=network-online.target instabox-data-init.service
 
 ## 测试与 CI
 
+> shellcheck 版本是固定的（CI 用 `v0.11.0`）。**本地必须用同一版本**，否则会出现
+> "本地干净、CI 报错"的假象 —— 这个坑真的踩过：0.10.0 说没问题，0.11.0 报出
+> `SC2218`/`SC2327`/`SC2328` 三条。装同版本的命令：
+>
+> ```bash
+> curl -sSL -o /tmp/sc.tar.xz \
+>   https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+> tar xf /tmp/sc.tar.xz -C /tmp && sudo install -m755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+> ```
+
+## 测试与 CI
+
 ```bash
 make test      # 158 条断言，纯离线，11 秒
 make check     # 语法 + shellcheck + 测试

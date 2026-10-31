@@ -38,7 +38,7 @@ assert_contains "$out" "还有下一页" "has_next：提示 --all"
 
 # ---------- 过滤参数真的传下去了 ----------
 : > "$STUB_LOG"
-out=$(bash "$O" --open --product BTC-USD --limit 5 >/dev/null 2>&1)
+bash "$O" --open --product BTC-USD --limit 5 >/dev/null 2>&1
 assert_contains "$(cat "$STUB_LOG")" "status=OPEN" "--open：传成 status=OPEN"
 assert_contains "$(cat "$STUB_LOG")" "product_ids=BTC-USD" "--product：传成 product_ids"
 assert_contains "$(cat "$STUB_LOG")" "limit=5" "--limit：传下去了"

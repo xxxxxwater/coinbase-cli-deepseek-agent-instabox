@@ -41,7 +41,9 @@ d=json.loads(sys.argv[1])
 assert isinstance(d["items"], list) and d["items"], "items 不能为空"
 assert all({"item","status","detail"} <= set(r) for r in d["items"]), "每行三字段"
 print("JSON_OK")
-' "$out" >/dev/null 2>&1 && ok "--json：结构完整" || bad "--json：结构完整"
+' "$out" >/dev/null 2>&1   # 这里只关心成败，不关心输出
+# shellcheck disable=SC2181
+if [ $? -eq 0 ]; then ok "--json：结构完整"; else bad "--json：结构完整"; fi
 
 # strict：只要有 ✗ 就退出码 1（期货与 Convert 在这套桩下必然 ✗）
 out=$(bash "$C" --strict 2>&1); rc=$?

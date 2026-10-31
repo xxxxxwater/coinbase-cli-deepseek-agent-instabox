@@ -16,14 +16,20 @@ jobs:
         with:
           node-version: '22'
 
-      - name: 安装 shellcheck
-        # 自托管 runner 是长期存在的机器，装了就不再重装
+      - name: 安装 shellcheck（固定版本）
+        # 版本必须固定：本地用 0.10 报"干净"、CI 用 0.11 报三条错，这种不一致
+        # 会让人以为"我明明查过了"。升版本要同时改这里和 README 的说明。
+        env:
+          SHELLCHECK_VERSION: v0.11.0
         run: |
-          if command -v shellcheck >/dev/null; then
-            echo "shellcheck $(shellcheck --version | awk '/version:/ {print $2}') 已安装"
-          else
-            sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          fi
+          set -eu
+          echo "固定使用 ${SHELLCHECK_VERSION}（本地也必须是这个版本）"
+          mkdir -p "$RUNNER_TEMP/sc"
+          curl -sSL --max-time 120 -o "$RUNNER_TEMP/sc/sc.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar xf "$RUNNER_TEMP/sc/sc.tar.xz" -C "$RUNNER_TEMP/sc"
+          sudo install -m 755 "$RUNNER_TEMP/sc/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version | head -2
 
       - name: 静态检查（shellcheck）
         # 测试脚本也一起查 —— 测试里写错不会让 CI 红，只会让测试骗人

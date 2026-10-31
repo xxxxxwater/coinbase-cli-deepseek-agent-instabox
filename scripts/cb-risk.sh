@@ -9,7 +9,7 @@
 #   cb-risk.sh show                # 当前限额 + 今日已用 + 最近几条记录
 #   cb-risk.sh set <键> <值>       # max_single_trade_usd / max_daily_usd /
 #                                  # max_orders_per_hour / allowed_products
-#   cb-risk.sh check <产品> <BUY|SELL> <名义金额>   # 只检查不记录，给脚本预检用
+#   cb-risk.sh check <产品> <BUY|SELL> <名义金额> [类型]   # 只检查不记录，给脚本预检用
 #   cb-risk.sh kill                # 立刻禁止所有下单（不删限额配置）
 #   cb-risk.sh resume              # 解除 kill switch
 #   cb-risk.sh reset               # 归档当日账本（限额计数从 0 开始，记录不丢）
@@ -76,8 +76,11 @@ case "$MODE" in
     ;;
 
   check)
-    [ ${#ARGS[@]} -ge 3 ] || { printf '错误: check 需要 <产品> <BUY|SELL> <名义金额>\n' >&2; exit 2; }
-    if cb_risk_check "${ARGS[0]}" "$(printf '%s' "${ARGS[1]}" | tr '[:lower:]' '[:upper:]')" "-" "${ARGS[2]}"; then
+    [ ${#ARGS[@]} -ge 3 ] || { printf '错误: check 需要 <产品> <BUY|SELL> <名义金额> [类型]\n' >&2; exit 2; }
+    # 第 4 个参数可选：订单类型（market/limit…），只影响账本里记什么，不影响判断。
+    # 不加这个参数时记 "-"，历史行为不变。
+    _otype=${ARGS[3]:--}
+    if cb_risk_check "${ARGS[0]}" "$(printf '%s' "${ARGS[1]}" | tr '[:lower:]' '[:upper:]')" "$_otype" "${ARGS[2]}"; then
       cb_ok "通过：${ARGS[0]} ${ARGS[1]} ${ARGS[2]}"
     else
       exit 4

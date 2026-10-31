@@ -51,6 +51,8 @@ cb_risk_killed() {
 }
 
 # cb_risk_journal_add <event> <product> <side> <type> <notional> <result> [reason] [extra_json]
+# 账本写不进去必须让人看见：审计缺一行比少拒绝一笔更糟，
+# 而且静默失败会让人以为"这笔被拒了但没记"，其实是"既没记也没拦"。
 cb_risk_journal_add() {
   local ev=$1 product=$2 side=$3 otype=$4 notional=$5 result=$6 reason=${7:-} extra=${8:-}
   python3 - "$(cb_risk_journal)" "$ev" "$product" "$side" "$otype" "$notional" "$result" "$reason" "$extra" <<'PYRISK'
@@ -78,6 +80,11 @@ fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
 with os.fdopen(fd, "a") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 PYRISK
+  local _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    printf '⚠ 风控账本写入失败（%s）：这笔操作可能没有被记录\n' "$(cb_risk_journal)" >&2
+  fi
+  return 0
 }
 
 # cb_risk_usage：打印 "<今日已用金额> <本小时已提交笔数>"

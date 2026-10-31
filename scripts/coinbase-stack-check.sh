@@ -75,7 +75,8 @@ if [ -n "$ver" ]; then check 0 "cli($ver)"; else check 1 cli; fi
 # 所以每次开机都确认一遍，发现被覆盖就重新装回去。
 GUARD_SRC="$HOME_DIR/bin/coinbase-guard"
 if [ -f "$GUARD_SRC" ]; then
-  if grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
+  if grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null \
+     && [ -f /usr/local/bin/coinbase-mcp-proxy.mjs ]; then
     check 0 guard
   else
     say "风控守卫被覆盖了，正在恢复"
@@ -84,6 +85,8 @@ if [ -f "$GUARD_SRC" ]; then
     if [ -x /usr/local/bin/coinbase ]; then
       sudo -n mv -f /usr/local/bin/coinbase /usr/local/bin/coinbase-real.js >/dev/null 2>&1
     fi
+    PROXY_SRC="$HOME_DIR/bin/coinbase-mcp-proxy.mjs"
+    [ -f "$PROXY_SRC" ] && sudo -n install -m 644 "$PROXY_SRC" /usr/local/bin/coinbase-mcp-proxy.mjs >/dev/null 2>&1
     if sudo -n install -m 755 "$GUARD_SRC" /usr/local/bin/coinbase >/dev/null 2>&1 \
        && grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
       check 0 "guard(restored)"

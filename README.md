@@ -49,6 +49,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/secret-scan.sh` | 扫密钥：**工作区 + 全部提交历史**（删掉的 commit 也能翻出来） |
 | `scripts/cb-config.sh` | 看/改配置：当前生效值来自环境变量还是文件、`set`/`unset`、`path` |
 | `scripts/cb-products.sh` | 查交易对：详情 / 搜索 / 按计价币列清单 / `--ticker` 只要价格 |
+| `scripts/cb-orders.sh` | 看订单：空态、分页提示、`--open` 只看挂着的；字段名取自 CLI 自己的 Response 契约 |
 | `scripts/cb-risk.sh` | 下单风控闸门：单笔/当日/每小时限额、产品白名单、kill switch、审计日志 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |
 | `scripts/coinbase-stack-check.sh` | 开机自检 8 项，可自愈的自动修 |

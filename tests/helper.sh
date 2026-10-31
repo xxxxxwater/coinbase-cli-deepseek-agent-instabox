@@ -69,7 +69,13 @@ case "$1" in
     uuid=${2#portfolio_id==}
     case " ${STUB_DENY:-} " in *" $uuid "*) printf '%s\n' "$DENIED" ;; *) printf '%s\n' "$TODAY" ;; esac ;;
   orders)
-    if [ "$2" = preview ]; then printf '%s\n' "$STUB_PREVIEW"; else printf '%s\n' "$STUB_CREATE"; fi ;;
+    case "${2:-}" in
+      preview) printf '%s\n' "$STUB_PREVIEW" ;;
+      list)
+        if [ -n "${STUB_ORDERS:-}" ]; then printf '%s\n' "$STUB_ORDERS"
+        else printf '%s\n' '{"orders":[],"has_next":false,"cursor":""}'; fi ;;
+      *) printf '%s\n' "$STUB_CREATE" ;;
+    esac ;;
   *) echo '{}' ;;
 esac
 STUB

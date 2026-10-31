@@ -79,7 +79,7 @@ cb_portfolio_id() {
       cb_die "没有可用的组合 UUID。
         三种给法，任选其一：
           export COINBASE_PORTFOLIO_ID=<uuid>
-          <上面的脚本> --portfolio <uuid>
+          （本脚本）--portfolio <uuid>
           bash scripts/cb-portfolio.sh --save      # 自动挑出有权限的那个并记住
         查组合：coinbase portfolios list --jq '.portfolios[] | {uuid,name}'" 3 ;;
   esac

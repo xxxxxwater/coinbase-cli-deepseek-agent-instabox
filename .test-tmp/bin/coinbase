@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# 测试用 coinbase 桩：按子命令返回固定 JSON，记录调用
+printf '%s\n' "$*" >> "$STUB_LOG"
+case "$1" in
+  products)
+    case "$3" in
+      AAPL-USD|TSLA-USD) echo '{"product_id":"'"$3"'","product_type":"EQUITY","price":"230.5"}' ;;
+      *)                 echo '{"product_id":"'"$3"'","product_type":"SPOT","price":"77019"}' ;;
+    esac ;;
+  balance)
+    echo '{"accounts":[{"currency":"USD","available_balance":{"value":"0"}},{"currency":"USDC","available_balance":{"value":"0"}}]}' ;;
+  orders)
+    if [ "$2" = preview ]; then echo '{"errorType":"invalid_argument","errorMessage":"order preview failed: preview insufficient fund"}'
+    else echo '{"success":true,"order_id":"stub-order-1"}'; fi ;;
+  *) echo '{"stub":"unknown"}'; exit 1 ;;
+esac

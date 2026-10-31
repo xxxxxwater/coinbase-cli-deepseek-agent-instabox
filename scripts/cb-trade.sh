@@ -8,22 +8,20 @@
 #
 # 用法:
 #   cb-trade.sh <产品> <BUY|SELL> <金额> [--type market|limit] [--limit <价>]
-#               [--session NORMAL|MULTI_SESSION] [--portfolio <uuid>] [--commit]
+#               [--session NORMAL|MULTI_SESSION] [--portfolio <uuid>] [--commit] [--yes]
 #
 # 金额含义: market BUY = 花多少计价币(quote_size)；SELL 或 limit = 数量(base_size)
 
 set -uo pipefail
 
-PFX=${COINBASE_PORTFOLIO_ID:-YOUR_PORTFOLIO_UUID}
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=lib/config.sh
+. "$HERE/lib/config.sh"
+
 PRODUCT=""; SIDE=""; AMOUNT=""
-OTYPE="market"; LIMIT=""; SESSION="NORMAL"; COMMIT=0
+OTYPE="market"; LIMIT=""; SESSION="NORMAL"; COMMIT=0; ASSUME_YES=0; PFX=""
 
-die() { printf '错误: %s\n' "$1" >&2; exit "${2:-2}"; }
-hr()  { printf '%s\n' "------------------------------------------------------------"; }
-
-usage() {
-  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
-}
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -32,36 +30,46 @@ while [ $# -gt 0 ]; do
     --session)   SESSION=${2:?}; shift 2 ;;
     --portfolio) PFX=${2:?}; shift 2 ;;
     --commit)    COMMIT=1; shift ;;
+    --yes|-y)    ASSUME_YES=1; shift ;;
     -h|--help)   usage; exit 0 ;;
-    -*)          die "未知选项 $1" ;;
+    -*)          cb_die "未知选项 $1" ;;
     *)
       if   [ -z "$PRODUCT" ]; then PRODUCT=$1
       elif [ -z "$SIDE" ];    then SIDE=$1
       elif [ -z "$AMOUNT" ];  then AMOUNT=$1
-      else die "多余参数: $1"; fi
+      else cb_die "多余参数: $1"; fi
       shift ;;
   esac
 done
 
 [ -n "$PRODUCT" ] && [ -n "$SIDE" ] && [ -n "$AMOUNT" ] || { usage; exit 2; }
-[ "$PFX" = "YOUR_PORTFOLIO_UUID" ] && die "请先 export COINBASE_PORTFOLIO_ID=<你的组合 UUID>，或传 --portfolio <uuid>
-         （查组合：coinbase portfolios list --jq '.portfolios[] | {uuid,name}'）"
+
 SIDE=$(printf '%s' "$SIDE" | tr '[:lower:]' '[:upper:]')
-case "$SIDE" in BUY|SELL) ;; *) die "side 必须是 BUY 或 SELL（收到 $SIDE）" ;; esac
-case "$OTYPE" in market|limit) ;; *) die "type 只支持 market 或 limit（收到 $OTYPE）" ;; esac
-[ "$OTYPE" = limit ] && [ -z "$LIMIT" ] && die "limit 单必须给 --limit"
+case "$SIDE" in BUY|SELL) ;; *) cb_die "side 必须是 BUY 或 SELL（收到 ${SIDE}）" ;; esac
+case "$OTYPE" in market|limit) ;; *) cb_die "type 只支持 market 或 limit（收到 ${OTYPE}）" ;; esac
+[ "$OTYPE" = limit ] && [ -z "$LIMIT" ] && cb_die "limit 单必须给 --limit"
+
+# 金额与价格必须是真的数字：这里直接进订单参数，写错就是真金白银。
+cb_is_amount() { printf '%s' "$1" | grep -Eq '^[0-9]+([.][0-9]+)?$'; }
+cb_is_amount "$AMOUNT" || cb_die "金额必须是正数（收到 '$AMOUNT'）"
+cb_is_amount "$LIMIT"  || [ -z "$LIMIT" ] || cb_die "限价必须是正数（收到 '$LIMIT'）"
+
+cb_need coinbase "安装：sudo npm i -g @coinbase/coinbase-cli"
+cb_ensure_node_options
+
+# 组合：命令行 > 环境变量 > 配置文件 > 报错（并给出三种补法）
+if [ -z "$PFX" ]; then
+  PFX=$(cb_portfolio_id) || exit $?
+fi
 
 # ---------- 1. 产品类型 ----------
 PROD_JSON=$(coinbase products get "$PRODUCT" 2>&1)
-PTYPE=$(printf '%s' "$PROD_JSON" | python3 -c 'import sys,json
-try: w=json.load(sys.stdin).get("product_type","")
-except Exception: w=""
-print(w)' 2>/dev/null)
-[ -n "$PTYPE" ] || die "查询不到产品 $PRODUCT：$(printf '%s' "$PROD_JSON" | head -c 200)"
+PTYPE=$(printf '%s' "$PROD_JSON" | cb_json_get product_type)
+[ -n "$PTYPE" ] || cb_die "查询不到产品 ${PRODUCT}：$(printf '%s' "$PROD_JSON" | head -c 200)"
 
-echo "产品   : $PRODUCT  ($PTYPE)"
-echo "方向   : $SIDE   类型: $OTYPE$([ "$OTYPE" = limit ] && echo " @ $LIMIT")"
-echo "组合   : $PFX"
+echo "产品   : ${PRODUCT}  (${PTYPE})"
+echo "方向   : ${SIDE}   类型: ${OTYPE}$([ "$OTYPE" = limit ] && echo " @ ${LIMIT}")"
+echo "组合   : ${PFX}"
 
 # ---------- 2. 余额 ----------
 BAL_JSON=$(coinbase balance portfolio_id=="$PFX" show_zero==true 2>&1)
@@ -69,13 +77,14 @@ printf '%s' "$BAL_JSON" | python3 -c '
 import sys,json
 try: d=json.load(sys.stdin)
 except Exception:
-    print("余额   : 读取失败"); raise SystemExit
+    print("余额   : 读取失败（返回的不是 JSON）"); raise SystemExit
 if "errorMessage" in d:
     print("余额   : 读取失败 -> %s" % d["errorMessage"][:90]); raise SystemExit
 have={}
 for a in d.get("accounts",[]):
-    v=float(a["available_balance"]["value"])
-    if v: have[a["currency"]]=v
+    try: v=float(a["available_balance"]["value"])
+    except Exception: continue
+    if v: have[a.get("currency","?")]=v
 if have: print("余额   : " + "  ".join("%s=%g" % (k,v) for k,v in sorted(have.items())))
 else:    print("余额   : 全为 0（USD/USDC 都没有可用资金）")
 ' 2>/dev/null || echo "余额   : 解析失败"
@@ -91,15 +100,15 @@ else
 fi
 [ "$PTYPE" = EQUITY ] && ORDER_ARGS+=(equity_trading_session="$SESSION")
 
-hr
+cb_hr
 case "$PTYPE" in
   SPOT|FUTURE*)
     echo "[预览] orders preview（服务端独立预览，不产生订单）"
     if coinbase orders preview "${ORDER_ARGS[@]}"; then
-      hr
+      cb_hr
     else
       echo "（预览未通过，见上方原因）" >&2
-      hr
+      cb_hr
     fi
     ;;
   EQUITY)
@@ -115,21 +124,27 @@ case "$PTYPE" in
     echo "       账户侧开通并绑定组合；API key 自己无法获得该能力。"
     echo
     echo "       注意美股交易时段：当前美东时间 $(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z %A')"
-    echo "       会话参数 equity_trading_session=$SESSION（默认 NORMAL=只做常规时段）"
-    hr
+    echo "       会话参数 equity_trading_session=${SESSION}（默认 NORMAL=只做常规时段）"
+    cb_hr
     ;;
   *)
-    die "未知 product_type: $PTYPE" 3
+    cb_die "未知 product_type: ${PTYPE}" 3
     ;;
 esac
 
 # ---------- 4. 执行 ----------
 if [ "$COMMIT" -eq 1 ]; then
+  # 真下单前在 tty 上再确认一次；脚本化调用请显式 --yes。
+  if [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
+    printf '确认提交这笔真实订单？输入 yes 继续：' >&2
+    read -r ans || ans=""
+    [ "$ans" = "yes" ] || { echo "已取消，未下单。" >&2; exit 130; }
+  fi
   echo "[执行] coinbase orders create"
   coinbase orders create "${ORDER_ARGS[@]}"
   RC=$?
-  hr
-  echo "退出码: $RC"
+  cb_hr
+  echo "退出码: ${RC}"
   exit $RC
 fi
 

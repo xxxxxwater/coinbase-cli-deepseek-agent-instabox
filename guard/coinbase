@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# CB_GUARD_V1 —— 这个标记用来判断"当前这个 coinbase 是不是守卫"，
+# 开机自检靠它发现被 npm 覆盖掉的守卫并重新装上。
 # coinbase — 放在 PATH 前面的守卫，只拦"提交订单"这一个动作。
 #
 # 为什么需要它：cb-trade.sh 会过风控，但 agent 也可以直接调
@@ -17,20 +19,35 @@ set -uo pipefail
 
 SELF=$(cd "$(dirname "$0")" && pwd)
 
-# 找真正的 coinbase：跳过本文件所在目录，避免自己 exec 自己
+# 找真正的 coinbase。三种顺序，前两种都不依赖 PATH 顺序 ——
+# 因为 ssh 的非登录 shell、cron、别的进程拿到的 PATH 各不相同，
+# 指望"把守卫目录排在前面"是不可靠的。
+#   1) 环境变量 CB_REAL_COINBASE（显式指定，排查时好用）
+#   2) 同目录下的 coinbase-real.js（安装时把真程序改名；必须是 .js ——
+#      这个 CLI 是 Node ESM 脚本，改成别的扩展名 node 会拒绝执行：
+#      ERR_UNKNOWN_FILE_EXTENSION。coinbase.real 作为旧名兼容保留）
+#   3) 沿 PATH 找，跳过本文件所在目录（避免自己 exec 自己）
 REAL=""
-IFS=':' read -r -a _paths <<< "${PATH:-/usr/local/bin:/usr/bin:/bin}"
-for d in "${_paths[@]}"; do
-  [ -n "$d" ] || continue
-  cand="$d/coinbase"
-  [ -x "$cand" ] || continue
-  [ "$(cd "$d" && pwd)" = "$SELF" ] && continue
-  REAL=$cand
-  break
-done
+if [ -n "${CB_REAL_COINBASE:-}" ] && [ -x "${CB_REAL_COINBASE}" ]; then
+  REAL=$CB_REAL_COINBASE
+elif [ -x "${SELF}/coinbase-real.js" ]; then
+  REAL="${SELF}/coinbase-real.js"
+elif [ -x "${SELF}/coinbase.real" ]; then
+  REAL="${SELF}/coinbase.real"
+else
+  IFS=':' read -r -a _paths <<< "${PATH:-/usr/local/bin:/usr/bin:/bin}"
+  for d in "${_paths[@]}"; do
+    [ -n "$d" ] || continue
+    cand="$d/coinbase"
+    [ -x "$cand" ] || continue
+    [ "$(cd "$d" && pwd)" = "$SELF" ] && continue
+    REAL=$cand
+    break
+  done
+fi
 
 if [ -z "$REAL" ]; then
-  echo "coinbase-guard: 在 PATH 里找不到真正的 coinbase（本文件所在目录已被跳过）" >&2
+  echo "coinbase-guard: 找不到真正的 coinbase（同目录的 coinbase-real.js、CB_REAL_COINBASE、PATH 都没有）" >&2
   echo "                PATH=${PATH}" >&2
   exit 127
 fi
@@ -68,19 +85,31 @@ if [ "$is_mutating" -eq 1 ]; then
 
   allow=$(cb_risk_cfg allowed_products "")
   if [ -n "$allow" ]; then
+    # 产品参数可能写成 product_id==BTC-USD、product_id=BTC-USD 或 --product_id==…，
+    # 三种都要认。认不出来时**拒绝**：白名单开着却判断不了产品，放行等于没有白名单。
     prod=""
     for a in "$@"; do
-      case "$a" in product_id==*) prod=${a#product_id==} ;; esac
-    done
-    if [ -n "$prod" ]; then
-      case ",$(printf '%s' "$allow" | tr -d ' ')," in
-        *",$prod,"*) ;;
-        *)
-          cb_risk_journal_add block "$prod" "?" "guard" "0" deny "不在白名单（coinbase-guard）"
-          echo "✗ 风控：${prod} 不在白名单 ${allow}，orders ${2} 被拒绝。" >&2
-          exit 4 ;;
+      case "$a" in
+        product_id==*)   prod=${a#product_id==} ;;
+        product_id=*)    prod=${a#product_id=} ;;
+        --product_id==*) prod=${a#--product_id==} ;;
+        --product_id=*)  prod=${a#--product_id=} ;;
       esac
+      [ -n "$prod" ] && break
+    done
+    if [ -z "$prod" ]; then
+      cb_risk_journal_add block "unknown" "?" "guard" "0" deny "白名单开着但认不出 product_id（coinbase-guard）"
+      echo "✗ 风控：白名单开着，但这笔 orders ${2} 认不出 product_id —— 无法判断是否放行，已拒绝。" >&2
+      echo "        白名单：${allow}。临时放行请先 cb-risk.sh set allowed_products ''" >&2
+      exit 78
     fi
+    case ",$(printf '%s' "$allow" | tr -d ' ')," in
+      *",$prod,"*) ;;
+      *)
+        cb_risk_journal_add block "$prod" "?" "guard" "0" deny "不在白名单（coinbase-guard）"
+        echo "✗ 风控：${prod} 不在白名单 ${allow}，orders ${2} 被拒绝。" >&2
+        exit 4 ;;
+    esac
   fi
 fi
 

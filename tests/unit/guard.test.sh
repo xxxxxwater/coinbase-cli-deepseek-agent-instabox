@@ -6,7 +6,7 @@ set -uo pipefail
 setup
 export NO_COLOR=1
 
-# 布置一个"装好"的样子：$TESTDIR/bin/coinbase 是守卫，$STUB_DIR/bin/coinbase 是真的
+# 布置一个"装好"的样子：$TESTDIR/bin/coinbase 是守卫，$STUB_DIR/coinbase 是真的
 # 注意：helper 的 $STUB_DIR 就是 $TESTDIR/bin，守卫不能放同一个目录 ——
 # 否则守卫会把自己跳过，然后认定"PATH 里没有真的 coinbase"。
 export CB_CONFIG="$CB_CONFIG"
@@ -15,7 +15,7 @@ cp "$ROOT/guard/coinbase" "$GB/coinbase"
 chmod +x "$GB/coinbase"
 cp "$ROOT/scripts/lib/config.sh" "$ROOT/scripts/lib/risk.sh" "$TESTDIR/scripts/lib/"
 
-# 桩（$STUB_DIR/bin/coinbase）就是"真程序"：捕获参数即算被调用。
+# 桩（$STUB_DIR/coinbase）就是"真程序"：捕获参数即算被调用。
 # 守卫放在它前面，所以 PATH 顺序是：守卫目录 → 桩目录。
 export FAKE_LOG="$STUB_LOG"
 export PATH="$GB:$STUB_DIR:$PATH"
@@ -55,6 +55,19 @@ out=$(bash "$GUARD" orders create product_id==ETH-USD side==BUY quote_size==5 2>
 assert_exit "$rc" 0 "白名单：ETH-USD 在白名单放行"
 assert_contains "$(cat "$FAKE_LOG")" "product_id==ETH-USD" "白名单：允许的确实交给了真程序"
 
+# ---------- 白名单：两种 = 写法都要认，认不出来要 fail closed ----------
+bash "$ROOT/scripts/cb-risk.sh" set allowed_products "ETH-USD" >/dev/null 2>&1
+: > "$FAKE_LOG"
+out=$(bash "$GUARD" orders create product_id=SOL-USD side==BUY quote_size==5 2>&1); rc=$?
+assert_exit "$rc" 4 "白名单：单等号写法也认（SOL-USD 被拒）"
+assert_eq "$(wc -l < "$FAKE_LOG" | tr -d ' ')" "0" "白名单：单等号被拒时真程序没被调用"
+out=$(bash "$GUARD" orders create --product_id==SOL-USD side==BUY 2>&1); rc=$?
+assert_exit "$rc" 4 "白名单：--product_id 写法也认"
+out=$(bash "$GUARD" orders create side==BUY quote_size==5 2>&1); rc=$?
+assert_exit "$rc" 78 "白名单：认不出 product_id 时拒绝（fail closed）"
+assert_contains "$out" "认不出 product_id" "白名单：说清为什么拒绝"
+bash "$ROOT/scripts/cb-risk.sh" set allowed_products "" >/dev/null 2>&1
+
 # ---------- orders cancel 也算改状态 ----------
 : > "$FAKE_LOG"
 bash "$ROOT/scripts/cb-risk.sh" kill >/dev/null 2>&1
@@ -69,6 +82,23 @@ out=$(bash "$GUARD" orders create product_id==BTC-USD 2>&1); rc=$?
 assert_exit "$rc" 78 "缺少风控库：fail closed（退出码 78）"
 assert_contains "$out" "找不到风控库" "缺少风控库：说清原因"
 mv "$TESTDIR/scripts/lib.off" "$TESTDIR/scripts/lib"
+
+# ---------- 同目录 coinbase.real 优先（不依赖 PATH 顺序） ----------
+cp "$STUB_DIR/coinbase" "$GB/coinbase-real.js"
+chmod +x "$GB/coinbase-real.js"
+: > "$STUB_LOG"
+# PATH 里故意只给守卫目录：如果它还去找 PATH，就会 127
+out=$(PATH="$GB:/usr/bin:/bin" bash "$GUARD" --version 2>&1); rc=$?
+assert_exit "$rc" 0 "同目录 coinbase-real.js：能找到真程序"
+assert_contains "$out" "0.0.11" "同目录 coinbase-real.js：真的执行了它"
+bash "$ROOT/scripts/cb-risk.sh" set allowed_products "" >/dev/null 2>&1   # 前面设过 ETH-USD
+out=$(PATH="$GB:/usr/bin:/bin" bash "$GUARD" orders create product_id==BTC-USD 2>&1); rc=$?
+assert_exit "$rc" 0 "同目录 coinbase-real.js：白名单清空后放行"
+# CB_REAL_COINBASE 覆盖
+: > "$STUB_LOG"
+out=$(CB_REAL_COINBASE="$STUB_DIR/coinbase" PATH="$GB:/usr/bin:/bin" bash "$GUARD" --version 2>&1); rc=$?
+assert_exit "$rc" 0 "CB_REAL_COINBASE：显式指定时也能用"
+rm -f "$GB/coinbase-real.js"
 
 # ---------- 找不到真 coinbase ----------
 out=$(PATH="$GB:/usr/bin:/bin" bash "$GUARD" --version 2>&1); rc=$?

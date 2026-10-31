@@ -123,8 +123,16 @@ print(json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v)
 }
 
 # cb_is_json：stdin 是不是合法 JSON
+# cb_is_json [字符串] —— 合法 JSON 返回 0，否则返回 1。
+# 不传参数时读标准输入：printf '%s' "$x" | cb_is_json
 cb_is_json() {
-  python3 -c 'import json,sys
-try: json.load(sys.stdin); print("yes")
-except Exception: print("no")' 2>/dev/null | grep -qx yes
+  if [ $# -gt 0 ]; then
+    printf '%s' "$1"
+  else
+    cat
+  fi | python3 -c 'import json,sys
+try:
+    json.load(sys.stdin)
+except Exception:
+    sys.exit(1)' 2>/dev/null
 }

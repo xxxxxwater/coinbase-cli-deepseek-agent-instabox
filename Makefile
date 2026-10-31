@@ -11,7 +11,7 @@ TESTS   := $(wildcard tests/*.sh) $(wildcard tests/unit/*.sh)
 version: ## 打印版本号
 	@echo $(VERSION)
 
-.PHONY: help check shellcheck syntax test lint doctor clean secret-scan
+.PHONY: help check shellcheck syntax test lint doctor clean secret-scan ci version
 
 help: ## 显示可用目标
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -39,3 +39,10 @@ doctor: ## 在本机诊断 Coinbase 环境
 
 clean: ## 清理测试产物
 	@rm -rf .test-tmp
+
+ci: ## 本地跑一遍 CI 会做的事（shellcheck + 语法 + 测试 + 密钥扫描）
+	@$(MAKE) --no-print-directory shellcheck
+	@$(MAKE) --no-print-directory syntax
+	@$(MAKE) --no-print-directory test
+	@$(MAKE) --no-print-directory secret-scan
+	@echo "CI 全绿（本地）"

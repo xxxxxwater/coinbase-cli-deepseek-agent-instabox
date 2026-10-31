@@ -63,6 +63,8 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `docs/ARCHITECTURE.md` | 分层职责、设计取舍、一次调用的完整链路、开机时序 |
 | `docs/TROUBLESHOOTING.md` | **按报错查**：为什么 → 怎么确认 → 怎么修 |
 | `docs/RISK.md` | 风控闸门与审计日志：规则、什么算额度、为什么闸门在预览之前 |
+| `docs/SECURITY.md` | 安全模型：能挡住什么、**挡不住什么**、为什么私钥是明文 |
+| `docs/GUARD.md` | 守卫的设计：为什么占二进制名、`.js` 约束、被 npm 覆盖后怎么自愈 |
 | `guard/coinbase` | 守卫：占住 `coinbase` 这个名字，拦 `orders create` / `orders cancel`，其它透明转发 |
 | `guard/mcp-proxy.mjs` | MCP 代理：`coinbase mcp` 走它，审 `tools/call` 里会动钱的工具 |
 | `tests/` | 158 条断言：`helper.sh` + `run.sh` + `unit/*.test.sh` |

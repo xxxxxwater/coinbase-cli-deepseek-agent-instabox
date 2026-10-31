@@ -10,3 +10,4 @@ cdp_api_key*.json
 .coinbase-stack-status.json
 node_modules/
 .DS_Store
+.test-tmp/

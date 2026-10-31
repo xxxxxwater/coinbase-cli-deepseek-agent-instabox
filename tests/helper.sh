@@ -68,6 +68,14 @@ case "$1" in
   balance)
     uuid=${2#portfolio_id==}
     case " ${STUB_DENY:-} " in *" $uuid "*) printf '%s\n' "$DENIED" ;; *) printf '%s\n' "$TODAY" ;; esac ;;
+  x402)
+    case "${2:-}" in
+      resources)
+        if [ -n "${STUB_X402:-}" ]; then printf '%s\n' "$STUB_X402"
+        else printf '%s\n' '{"resources":[]}'; fi ;;
+      fetch) printf '%s\n' "${STUB_X402_FETCH:-{\"ok\":true\}}"; exit "${STUB_X402_FETCH_RC:-0}" ;;
+      *) echo '{}' ;;
+    esac ;;
   orders)
     case "${2:-}" in
       preview) printf '%s\n' "$STUB_PREVIEW" ;;

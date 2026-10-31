@@ -1,6 +1,11 @@
 ## [Unreleased]
 
 ### Added
+
+- `scripts/cb-x402.sh`：x402 付费数据目录与取回。`resources` 把 6 位原子单位
+  换算成 USDC 并支持 `--search`/`--limit`；`fetch` 默认只打印将要执行的命令，
+  `--commit` 才真付，且必须过 `cb-risk.sh` 闸门（kill switch / 单笔上限）——
+  x402 也是花钱，不该绕开同一套限额。28 条断言。
 - `guard/mcp-proxy.mjs`：`coinbase mcp` 也过风控闸门。此前二进制守卫只拦得住
   shell 里的 `orders create`，而 agent 实际是通过 MCP server 下单的 —— 那条路
   完全绕过限额。现在 `tools/call` 里会动钱的工具（下单/改单/撤单/平仓/兑换/转账/

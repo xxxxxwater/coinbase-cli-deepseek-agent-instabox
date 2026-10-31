@@ -17,7 +17,7 @@ root = pathlib.Path(sys.argv[1])
 pat = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])')
 files = sorted(
     [p for p in (root / "scripts").rglob("*.sh")]
-    + [root / "install.sh"]
+    + [p for p in root.glob("*.sh")]        # install.sh / uninstall.sh / 以后新增的
     + [p for p in (root / "tests").rglob("*.sh")]
 )
 files = [f for f in files if f.exists()]

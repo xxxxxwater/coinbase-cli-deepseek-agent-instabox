@@ -136,3 +136,52 @@ try:
 except Exception:
     sys.exit(1)' 2>/dev/null
 }
+
+# ---------- 写入 ----------
+
+# cb_cfg_set <键> <值>：原子写配置文件（临时文件 + os.replace，文件 600、目录 700）
+# 只处理一层键；值一律按字符串存。
+cb_cfg_set() {
+  local f; f=$(cb_config_path)
+  mkdir -p "$(dirname "$f")"; chmod 700 "$(dirname "$f")" 2>/dev/null || true
+  python3 - "$f" "$1" "$2" <<'PYCFG'
+import json, os, sys, tempfile
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+d = {}
+if os.path.exists(path):
+    try:
+        d = json.load(open(path))
+    except Exception:
+        d = {}
+d[key] = val
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+os.chmod(tmp, 0o600)
+os.replace(tmp, path)
+PYCFG
+}
+
+# cb_cfg_unset <键>：删掉一个键（文件或键不存在时返回 1）
+cb_cfg_unset() {
+  local f; f=$(cb_config_path)
+  [ -f "$f" ] || return 1
+  python3 - "$f" "$1" <<'PYCFG'
+import json, os, sys, tempfile
+path, key = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(path))
+except Exception:
+    sys.exit(1)
+if key not in d:
+    sys.exit(1)
+d.pop(key)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+os.chmod(tmp, 0o600)
+os.replace(tmp, path)
+PYCFG
+}

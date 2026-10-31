@@ -53,4 +53,27 @@ for c in env.node cli.coinbase node.ipv4 net.edge key.type api.permissions; do
   assert_contains "$out" "$c" "包含检查 ${c}"
 done
 
+echo "风控两项：限额没设要说出来，守卫没装要说出来"
+out=$(COINBASE_KEY_FILE="$TESTDIR/ec.json" bash "$DOC" 2>&1)
+assert_contains "$out" "risk.limits" "包含 risk.limits 检查"
+assert_contains "$out" "没有设置任何限额" "没设限额时明确告警（而不是显示绿灯）"
+assert_contains "$out" "guard.off" "包含守卫检查"
+assert_contains "$out" "没有守卫" "用的是桩 coinbase —— 应该报没有守卫"
+
+echo "守卫在位时应该报 guard.on / guard.selfheal"
+GHOME="$TESTDIR/gh"; mkdir -p "$GHOME/guardbin" "$GHOME/bin"
+printf '#!/usr/bin/env bash\n# CB_GUARD_V1\necho guard\n' > "$GHOME/guardbin/coinbase"; chmod 755 "$GHOME/guardbin/coinbase"
+printf '// proxy\n' > "$GHOME/guardbin/coinbase-mcp-proxy.mjs"
+printf '#!/usr/bin/env bash\n' > "$GHOME/bin/coinbase-guard"; chmod 755 "$GHOME/bin/coinbase-guard"
+out=$(HOME="$GHOME" PATH="$GHOME/guardbin:$PATH" COINBASE_KEY_FILE="$TESTDIR/ec.json" bash "$DOC" 2>&1)
+assert_contains "$out" "guard.on" "守卫在位时报 guard.on"
+assert_contains "$out" "守卫在位" "说清 orders create 与 mcp 都过闸门"
+assert_contains "$out" "guard.selfheal" "自愈副本也在时报 guard.selfheal"
+
+echo "守卫在但代理没了 —— 必须判失败（mcp 会 exit 78）"
+rm -f "$GHOME/guardbin/coinbase-mcp-proxy.mjs"
+out=$(HOME="$GHOME" PATH="$GHOME/guardbin:$PATH" COINBASE_KEY_FILE="$TESTDIR/ec.json" bash "$DOC" 2>&1); rc=$?
+assert_contains "$out" "guard.proxy" "代理缺失时报 guard.proxy"
+assert_exit "$rc" 2 "代理缺失属于失败项"
+
 finish

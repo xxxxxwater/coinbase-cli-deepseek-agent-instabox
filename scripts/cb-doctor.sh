@@ -235,6 +235,49 @@ else
   record warn portfolio.id "还没有可用的组合 UUID" "bash scripts/cb-portfolio.sh --save 自动挑一个存起来"
 fi
 
+# ---------- 8.5 风控：守卫在不在、限额设没设 ----------
+# 这两项查的是"你以为有闸门，其实没有"——比起直接报错，这种更危险。
+RISK_LIB="$(dirname "${BASH_SOURCE[0]}")/lib/risk.sh"
+# shellcheck source=lib/risk.sh
+if . "$RISK_LIB" 2>/dev/null; then
+  if cb_risk_killed 2>/dev/null; then
+    record warn risk.state "kill switch 开着：所有下单都被禁止" "cb-risk.sh resume"
+  else
+    _lim=""
+    for _k in max_single_trade_usd max_daily_usd max_orders_per_hour allowed_products; do
+      _v=$(cb_risk_cfg "$_k" "" 2>/dev/null)
+      [ -n "$_v" ] && _lim="${_lim}${_k}=${_v} "
+    done
+    if [ -z "$_lim" ]; then
+      record warn risk.limits "没有设置任何限额（脚本层不拦）" "cb-risk.sh set max_single_trade_usd 100"
+    else
+      record ok risk.limits "${_lim% }"
+    fi
+  fi
+  # 守卫：装没装、被 npm 覆盖了没有
+  _cb=$(command -v coinbase 2>/dev/null || true)
+  if [ -n "$_cb" ] && grep -q 'CB_GUARD_V1' "$_cb" 2>/dev/null; then
+    if [ -f "$(dirname "$_cb")/coinbase-mcp-proxy.mjs" ]; then
+      record ok guard.on "守卫在位（orders create 与 mcp 都会过闸门）"
+    else
+      record fail guard.proxy "守卫在，但 MCP 代理不见了：coinbase mcp 会 exit 78" \
+        "install.sh --guard 重装，或 cp guard/mcp-proxy.mjs $(dirname "$_cb")/coinbase-mcp-proxy.mjs"
+    fi
+    if [ -f "${HOME}/bin/coinbase-guard" ]; then
+      record ok guard.selfheal "自愈副本在（开机自检能把它装回去）"
+    else
+      record warn guard.selfheal "没有自愈副本：npm 升级覆盖后守卫会悄悄消失" \
+        "cp guard/coinbase ${HOME}/bin/coinbase-guard"
+    fi
+  elif [ -n "$_cb" ]; then
+    record warn guard.off "coinbase 没有守卫：直连 orders create / mcp 可以绕过所有限额" "install.sh --guard"
+  else
+    record fail guard.missing "找不到 coinbase 命令"
+  fi
+else
+  record warn risk.lib "找不到 lib/risk.sh，风控与守卫都没法判断" "确认安装完整：install.sh"
+fi
+
 # ---------- 9. 可选：DeepSeek 模型接通 ----------
 if command -v claude >/dev/null && [ -f "$HOME/.claude/settings.json" ]; then
   base=$(python3 -c '

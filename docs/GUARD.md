@@ -92,3 +92,33 @@ coinbase orders create product_id=BTC-USD ... # 单等号
 - 金额上限目前只在 `cb-trade.sh` 和 MCP 代理里；shell 直连的
   `quote_size=99999` 只受 kill switch 与白名单约束。
   详见 [SECURITY.md](SECURITY.md) 第三节。
+
+## 为什么守卫优先用「包里的原始入口」
+
+第一版守卫把真程序**复制**成 `/usr/local/bin/coinbase-real.js` 再 exec 它。
+能用，但有个静默副作用：
+
+```console
+$ coinbase skills list
+No bundled skills found.
+$ coinbase skills add --dir ~/.claude/skills
+Installed 0 skills to /home/user/.claude/skills.
+```
+
+这个 CLI 用 `import.meta.url` 定位自己捆绑的 `skills/` 目录。入口被复制到
+`/usr/local/bin` 之后，它去 `/usr/local/bin/skills` 找 —— 那里当然没有。
+**它不报错，只是说"没有捆绑的 skills"**，而 agent 那边表现为"突然不知道有这些能力"。
+
+所以现在的解析顺序是：
+
+1. `CB_REAL_COINBASE`（显式指定）
+2. **`$(cat /usr/local/bin/coinbase-pkg-root)/@coinbase/coinbase-cli/dist/index.js`**
+3. 常见 npm 全局前缀下的同一个文件
+4. 同目录的 `coinbase-real.js` / `coinbase.real`（兜底，会丢 skills 解析）
+5. 沿 PATH 找，跳过自己所在目录
+
+`install.sh --guard` 和开机自检都会写 `coinbase-pkg-root`（内容是 `npm root -g`），
+所以正常情况下走的都是第 2 条，`skills` 相关命令完好。
+
+诊断：`cb-skills.sh verify` —— 它会把"CLI 谎报没捆绑"（退出码 3）和"真的缺 skill"
+（退出码 1）分开报，因为这两种情况的修法完全不同。

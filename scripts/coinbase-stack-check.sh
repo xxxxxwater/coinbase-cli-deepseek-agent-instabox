@@ -74,6 +74,16 @@ if [ -n "$ver" ]; then check 0 "cli($ver)"; else check 1 cli; fi
 # 而"守卫悄悄消失"比"守卫从没装过"更危险：两者看起来都是能下单。
 # 所以每次开机都确认一遍，发现被覆盖就重新装回去。
 GUARD_SRC="$HOME_DIR/bin/coinbase-guard"
+# 守卫优先从包里原始入口跑真程序（CLI 按 import.meta.url 找捆绑 skills/），
+# 这里把 npm 全局 root 缓存下来，省掉每次调用去问 npm。
+PKG_ROOT_CACHE=/usr/local/bin/coinbase-pkg-root
+_write_pkg_root() {
+  local r
+  r=$(npm root -g 2>/dev/null || true)
+  [ -n "$r" ] || return 0
+  printf '%s\n' "$r" | sudo -n tee "$PKG_ROOT_CACHE" >/dev/null 2>&1 || true
+  sudo -n chmod 644 "$PKG_ROOT_CACHE" >/dev/null 2>&1 || true
+}
 if [ -f "$GUARD_SRC" ]; then
   if grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null \
      && [ -f /usr/local/bin/coinbase-mcp-proxy.mjs ]; then
@@ -89,6 +99,7 @@ if [ -f "$GUARD_SRC" ]; then
     [ -f "$PROXY_SRC" ] && sudo -n install -m 644 "$PROXY_SRC" /usr/local/bin/coinbase-mcp-proxy.mjs >/dev/null 2>&1
     if sudo -n install -m 755 "$GUARD_SRC" /usr/local/bin/coinbase >/dev/null 2>&1 \
        && grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
+      _write_pkg_root
       check 0 "guard(restored)"
     else
       check 1 guard

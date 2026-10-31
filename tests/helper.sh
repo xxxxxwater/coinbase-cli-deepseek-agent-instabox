@@ -45,6 +45,25 @@ case "$1" in
   --version)  echo "coinbase ${STUB_VERSION:-0.0.11}" ;;
   env)        printf '%s\n' "$STUB_ENV_OUT" ;;
   api-key)    printf '%s\n' "$STUB_PERM" ;;
+  skills)
+    case "${2:-}" in
+      list) printf '%s\n' "${STUB_SKILLS:-Name                  Installed   Description
+──────────────────────────────────────────────────────────
+coinbase              yes         umbrella
+coinbase-trading      yes         spot orders}" ;;
+      add)
+        # 真机行为：把捆绑的 skill 拷到 --dir 指定的目录
+        _d=""; while [ $# -gt 0 ]; do [ "$1" = "--dir" ] && _d=$2; shift; done
+        if [ -n "$_d" ]; then
+          for _n in coinbase coinbase-trading; do
+            mkdir -p "$_d/$_n" && printf '# %s\n' "$_n" > "$_d/$_n/SKILL.md"
+          done
+          printf 'Installed 2 skills to %s.\n' "$_d"
+        else
+          printf 'Installed 0 skills.\n'
+        fi ;;
+      *) echo '{}' ;;
+    esac ;;
   portfolios) printf '%s\n' "$STUB_PORTFOLIOS" ;;
   products)
     case "$2" in

@@ -2,6 +2,19 @@
 
 ### Added
 
+- `scripts/cb-skills.sh`：管 agent skills。`verify` 逐个检查 claude 与 codex 两侧是否
+  在位，`sync` 重新从 CLI 包安装。**能分辨"真缺失"与"CLI 谎报没捆绑"**（后者退出码 3
+  并解释根因），因为这两种情况修法完全不同。16 条断言。
+
+### Fixed
+
+- 守卫把真程序复制成 `/usr/local/bin/coinbase-real.js` 之后，`coinbase skills list`
+  开始谎报 `No bundled skills found`、`skills add` 装 0 个：这个 CLI 用
+  `import.meta.url` 找自己捆绑的 `skills/`，入口挪了位置就找不到。守卫现在**优先**
+  用包里的原始入口（`$(npm root -g)/@coinbase/coinbase-cli/dist/index.js`），
+  复制品只作兜底；`install.sh --guard` 与开机自检会把 npm root 写进
+  `/usr/local/bin/coinbase-pkg-root` 供守卫读取。
+
 - `scripts/cb-capability.sh`：能力面矩阵。只读探测十个产品面（鉴权/现货行情/余额/
   下单路径/股票可见性/股票下单/Convert/x402/期货/组合），标 `✓ / ✗ / ·` 并写清依据。
   股票刻意不试 `orders create`（真下单会成交，探测不该有副作用）。`--strict` 可接自检。

@@ -27,9 +27,30 @@ SELF=$(cd "$(dirname "$0")" && pwd)
 #      这个 CLI 是 Node ESM 脚本，改成别的扩展名 node 会拒绝执行：
 #      ERR_UNKNOWN_FILE_EXTENSION。coinbase.real 作为旧名兼容保留）
 #   3) 沿 PATH 找，跳过本文件所在目录（避免自己 exec 自己）
+#   0) 【优先】包里的原始入口。这个 CLI 用 import.meta.url 找自己捆绑的
+#      skills/ 目录，把入口复制到 /usr/local/bin 之后它会去 /usr/local/bin/skills
+#      找，于是 `coinbase skills list` 谎报 "No bundled skills found"、
+#      `skills add` 装 0 个 —— 静默失效，比报错更难发现。所以只要能找到包里
+#      的原始入口就优先用它，复制品只作为兜底。
 REAL=""
 if [ -n "${CB_REAL_COINBASE:-}" ] && [ -x "${CB_REAL_COINBASE}" ]; then
   REAL=$CB_REAL_COINBASE
+fi
+if [ -z "$REAL" ]; then
+  # npm 全局前缀的常见位置 + npm 自己报告的 root（缓存文件由安装脚本写）
+  _cands=""
+  [ -f "${SELF}/coinbase-pkg-root" ] && _cands=$(cat "${SELF}/coinbase-pkg-root" 2>/dev/null)
+  for _r in ${_cands} \
+              "${NPM_CONFIG_PREFIX:-/usr/local}/lib/node_modules" \
+              "/usr/local/lib/node_modules" \
+              "/usr/lib/node_modules" \
+              "${HOME:-/root}/.npm-global/lib/node_modules"; do
+    _e="$_r/@coinbase/coinbase-cli/dist/index.js"
+    if [ -f "$_e" ]; then REAL=$_e; break; fi
+  done
+fi
+if [ -n "$REAL" ]; then
+  :
 elif [ -x "${SELF}/coinbase-real.js" ]; then
   REAL="${SELF}/coinbase-real.js"
 elif [ -x "${SELF}/coinbase.real" ]; then

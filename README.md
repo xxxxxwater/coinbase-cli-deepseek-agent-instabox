@@ -49,6 +49,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/secret-scan.sh` | 扫密钥：**工作区 + 全部提交历史**（删掉的 commit 也能翻出来） |
 | `scripts/cb-config.sh` | 看/改配置：当前生效值来自环境变量还是文件、`set`/`unset`、`path` |
 | `scripts/cb-products.sh` | 查交易对：详情 / 搜索 / 按计价币列清单 / `--ticker` 只要价格 |
+| `scripts/cb-skills.sh` | 查/补 agent skills（claude 与 codex 两侧） |
 | `scripts/cb-capability.sh` | 能力面矩阵：这把 key / 这个组合到底能做什么 |
 | `scripts/cb-x402.sh` | x402 付费数据：先看目录和价格，再决定花不花 |
 | `scripts/cb-orders.sh` | 看订单：空态、分页提示、`--open` 只看挂着的；字段名取自 CLI 自己的 Response 契约 |

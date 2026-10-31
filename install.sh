@@ -180,6 +180,14 @@ if [ "$WITH_GUARD" -eq 1 ]; then
     as_root mv -f "$REAL" "$GUARD_DIR/coinbase-real.js"
     say "  真程序 → ${GUARD_DIR}/coinbase-real.js"
   fi
+  # 记下 npm 全局 root：守卫优先用包里**原始入口**跑真程序，因为这个 CLI 用
+  # import.meta.url 找捆绑的 skills/ —— 入口被复制到别处后它会谎报
+  # "No bundled skills found"（静默失效）。写个缓存文件省掉每次调 npm。
+  PKG_ROOT=$(npm root -g 2>/dev/null || true)
+  if [ -n "$PKG_ROOT" ]; then
+    printf '%s\n' "$PKG_ROOT" | as_root tee "$GUARD_DIR/coinbase-pkg-root" >/dev/null
+    as_root chmod 644 "$GUARD_DIR/coinbase-pkg-root"
+  fi
   as_root install -m 755 "$HERE/guard/coinbase" "$REAL"
   as_root install -m 644 "$HERE/guard/mcp-proxy.mjs" "$GUARD_DIR/coinbase-mcp-proxy.mjs"
   # 再放一份在 $HOME/bin：开机自检靠它把被 npm 覆盖掉的守卫装回去。

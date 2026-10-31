@@ -2,6 +2,15 @@
 
 ### Added
 
+- `scripts/cb-market.sh`：市场状态一屏（情绪 / 总量 / 流动性 / 杠杆 / 链上拥堵）。
+  只接实测从目标机拿得到的免费源（alternative.me、coingecko、llama.fi、
+  mempool.space、okx 资金费率）；币安/Bybit/Deribit 在该出口 IP 上被地区封锁
+  （451/403），写在 `docs/MARKET.md` 里省得后人反复试。缺数据写"不可用 + 原因"
+  而不是留白，`--json` 给程序、`--strict` 才让缺失变成失败。36 条断言。
+
+- `cb-brief.sh` 增加「市场」板块，位置在风控之后、余额之前（先看允不允许，
+  再看该不该，然后才是有多少钱）；`--no-market` 可关掉。
+
 - `scripts/cb-brief.sh`：一屏态势（风控 / 余额 / 走势 / 事件）。
 
   真正要下单时判断依据分散在四个脚本里，人要在脑子里拼、agent 常常只看得到

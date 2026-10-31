@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cb-brief.sh — 一屏态势：风控状态 + 余额 + 走势 + 事件
+# cb-brief.sh — 一屏态势：风控状态 + 市场状态 + 余额 + 走势 + 事件
 #
 # 为什么需要：真正要下单的时候，判断依据分散在四个脚本里（风控允不允许、
 # 有多少钱、价格什么形状、刚出了什么事）。人要把四条命令的输出在脑子里拼起来，
@@ -10,8 +10,9 @@
 # 少了风控那一段的态势图和"一切正常"看起来一模一样。
 #
 # 用法:
-#   cb-brief.sh [产品] [--news N] [--candles N] [--since 24h]
+#   cb-brief.sh [产品] [--news N] [--candles N] [--since 24h] [--no-market]
 #     产品       默认 BTC-USD
+#     --no-market 不显示市场状态（情绪/总量/流动性/杠杆/链上）
 #     --news N   事件条数，默认 6（0 = 不显示事件）
 #     --candles N K 线根数，默认 12
 #     --since D  事件窗口，默认 24h
@@ -29,6 +30,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 && !/^#/ { exit }' "$0"; }
 
 PRODUCT="BTC-USD"
+MARKET=1
 NEWS_N=6
 CANDLES_N=12
 SINCE="24h"
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
     --news)    [ $# -ge 2 ] || { printf '错误: --news 需要值\n' >&2; exit 2; }; NEWS_N=$2; shift 2 ;;
     --candles) [ $# -ge 2 ] || { printf '错误: --candles 需要值\n' >&2; exit 2; }; CANDLES_N=$2; shift 2 ;;
     --since)   [ $# -ge 2 ] || { printf '错误: --since 需要值\n' >&2; exit 2; }; SINCE=$2; shift 2 ;;
+    --no-market) MARKET=0; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) printf '错误: 未知参数 %s（--help 看用法）\n' "$1" >&2; exit 2 ;;
     *) PRODUCT=$1; shift ;;
@@ -67,7 +70,26 @@ else
   unavailable "找不到 cb-risk.sh"
 fi
 
-# 2. 余额
+# 2. 市场：情绪 / 总量 / 流动性 / 杠杆 / 链上拥堵
+section "市场"
+if [ "$MARKET" -eq 0 ]; then
+  printf '（跳过）\n'
+elif [ -x "$HERE/cb-market.sh" ]; then
+  out=$(cb_timeout 60 bash "$HERE/cb-market.sh" 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    # 简报头部已有时间，去掉它自己的标题行，保留五行信号
+    printf '%s\n' "$out" | sed '1{/^市场状态/d;}'
+  elif [ "$rc" -eq 6 ]; then
+    unavailable "所有市场数据源都失败了"
+  else
+    unavailable "cb-market.sh 退出码 ${rc:-?}"
+  fi
+else
+  unavailable "找不到 cb-market.sh"
+fi
+
+# 3. 余额
 section "余额"
 if command -v coinbase >/dev/null 2>&1; then
   PFX=$(cb_portfolio_id 2>/dev/null) || PFX=""
@@ -100,7 +122,7 @@ else
   unavailable "找不到 coinbase 或 cb-doctor.sh"
 fi
 
-# 3. 走势
+# 4. 走势
 section "走势"
 if [ -x "$HERE/cb-candles.sh" ] && [ "$CANDLES_N" -gt 0 ]; then
   out=$(cb_timeout 45 bash "$HERE/cb-candles.sh" "$PRODUCT" --limit "$CANDLES_N" 2>&1)
@@ -114,7 +136,7 @@ else
   printf '（跳过）\n'
 fi
 
-# 4. 事件：只留 P0/P1，P2/P3 交给完整的 cb-news.sh
+# 5. 事件：只留 P0/P1，P2/P3 交给完整的 cb-news.sh
 section "事件"
 if [ -x "$HERE/cb-news.sh" ] && [ "$NEWS_N" -gt 0 ]; then
   out=$(CB_NEWS_FIXTURE_DIR="${CB_NEWS_FIXTURE_DIR:-}" cb_timeout 90 bash "$HERE/cb-news.sh" \

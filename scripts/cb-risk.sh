@@ -143,7 +143,12 @@ EOF
     if [ "$_t_on" = "on" ]; then
       cb_warn "事件收紧: 生效 —— ${_t_count} 条 P0 在 $(( _t_age / 60 )) 分钟前，单笔上限 ×${_t_factor}（cb-risk.sh set tighten_on_p0 false 可关）"
     else
-      cb_dim "事件收紧: 未生效（P0 标记 ${_t_count} 条；跑一次 cb-news.sh 会更新）"
+      _t_hours=$(cb_risk_cfg tighten_hours 6)
+      if [ "${_t_count:-0}" -gt 0 ] 2>/dev/null; then
+        cb_dim "事件收紧: 未生效（最近的 P0 在 $(( _t_age / 3600 )) 小时前，窗口 ${_t_hours}h；跑一次 cb-news.sh 会刷新）"
+      else
+        cb_dim "事件收紧: 未生效（还没有 P0 标记；跑一次 cb-news.sh 才会写）"
+      fi
     fi
     cb_hr
     for k in max_single_trade_usd max_daily_usd max_orders_per_hour max_transfer_usd allowed_products allow_non_usd_transfer tighten_on_p0 tighten_hours tighten_factor; do

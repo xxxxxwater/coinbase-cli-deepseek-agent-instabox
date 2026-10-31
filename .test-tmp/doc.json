@@ -1,0 +1,79 @@
+{
+  "ok": false,
+  "failed": 1,
+  "warned": 1,
+  "checks": [
+    {
+      "check": "env.host",
+      "status": "ok",
+      "message": "Darwin x86_64 / christse / ChrisdeMacBook-Pro.local",
+      "hint": ""
+    },
+    {
+      "check": "env.node",
+      "status": "ok",
+      "message": "node 24.14.0（≥22 ✓）",
+      "hint": ""
+    },
+    {
+      "check": "cli.coinbase",
+      "status": "ok",
+      "message": "coinbase 0.0.11",
+      "hint": ""
+    },
+    {
+      "check": "node.ipv4",
+      "status": "fail",
+      "message": "NODE_OPTIONS 缺少 --dns-result-order=ipv4first",
+      "hint": "缺了它会走 IPv6 出网，源 IP 不在门户白名单里，所有请求一律 401"
+    },
+    {
+      "check": "",
+      "status": "          修法：export NODE_OPTIONS=--dns-result-order=ipv4first（并写进 /etc/environment 与 systemd 单元）",
+      "message": "",
+      "hint": ""
+    },
+    {
+      "check": "net.edge",
+      "status": "ok",
+      "message": "Coinbase 看到的源 IP：5.34.221.120（IPv4）",
+      "hint": "确认这个地址在 CDP 门户该 API key 的 IP Allowlist 里"
+    },
+    {
+      "check": "key.perm",
+      "status": "ok",
+      "message": "key 文件权限 600",
+      "hint": ""
+    },
+    {
+      "check": "key.type",
+      "status": "ok",
+      "message": "ECDSA (PEM, P-256) — Advanced Trade 支持；key …y",
+      "hint": ""
+    },
+    {
+      "check": "cli.env",
+      "status": "ok",
+      "message": "环境：live",
+      "hint": ""
+    },
+    {
+      "check": "api.permissions",
+      "status": "ok",
+      "message": "can_view=True can_trade=True can_transfer=True portfolio_type=CONSUMER",
+      "hint": ""
+    },
+    {
+      "check": "portfolio.balance",
+      "status": "ok",
+      "message": "组合 11111111… 可读，余额接口 200",
+      "hint": ""
+    },
+    {
+      "check": "model.deepseek",
+      "status": "warn",
+      "message": "claude 未指向 DeepSeek",
+      "hint": "bash scripts/ds-model.sh --key-file <deepseek-key>"
+    }
+  ]
+}

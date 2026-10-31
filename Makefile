@@ -11,7 +11,7 @@ TESTS   := $(wildcard tests/*.sh) $(wildcard tests/unit/*.sh)
 version: ## 打印版本号
 	@echo $(VERSION)
 
-.PHONY: help check shellcheck syntax test lint doctor clean
+.PHONY: help check shellcheck syntax test lint doctor clean secret-scan
 
 help: ## 显示可用目标
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -30,6 +30,9 @@ test: ## 跑全部测试
 	@bash tests/run.sh
 
 check: syntax test ## 语法 + 测试（CI 跑这个）
+
+secret-scan: ## 扫密钥（工作区 + 全部历史）
+	@bash scripts/secret-scan.sh
 
 doctor: ## 在本机诊断 Coinbase 环境
 	@bash scripts/cb-doctor.sh

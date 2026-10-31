@@ -40,10 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # 要全历史：工作区干净不代表没泄漏过，删掉的那条 commit 还在 GitHub 上
           fetch-depth: 0
-      - name: 确认没有密钥入库
-        run: |
-          set -e
-          bad=$(git grep -nE 'sk-[A-Za-z0-9]{20,}|[0-9]{9,10}:AA[A-Za-z0-9_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' -- . ':!*.md' ':!docs/*' || true)
-          if [ -n "$bad" ]; then echo "发现疑似密钥："; echo "$bad"; exit 1; fi
-          echo "干净"
+      - name: 扫描工作区与全部历史
+        run: bash scripts/secret-scan.sh

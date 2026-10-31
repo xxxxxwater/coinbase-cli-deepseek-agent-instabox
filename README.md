@@ -46,6 +46,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/cb-portfolio.sh` | 逐个探测哪个组合可访问，`--save` 记住唯一可用的那个 |
 | `scripts/ds-model.sh` | 把 `claude` / `codex` 指向 DeepSeek；key 验证不过则**一个字节都不写** |
 | `scripts/cb-activate-key.sh` | 装载 CDP key：先判算法类型，Ed25519 直接拒绝 |
+| `scripts/secret-scan.sh` | 扫密钥：**工作区 + 全部提交历史**（删掉的 commit 也能翻出来） |
 | `scripts/cb-config.sh` | 看/改配置：当前生效值来自环境变量还是文件、`set`/`unset`、`path` |
 | `scripts/cb-products.sh` | 查交易对：详情 / 搜索 / 按计价币列清单 / `--ticker` 只要价格 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |

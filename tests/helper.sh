@@ -40,10 +40,25 @@ case "$1" in
   env)        printf '%s\n' "$STUB_ENV_OUT" ;;
   api-key)    printf '%s\n' "$STUB_PERM" ;;
   portfolios) printf '%s\n' "$STUB_PORTFOLIOS" ;;
-  products)   case "$3" in
-                AAPL-USD|TSLA-USD) echo '{"product_id":"'"$3"'","product_type":"EQUITY"}' ;;
-                *) echo '{"product_id":"'"$3"'","product_type":"SPOT"}' ;;
-              esac ;;
+  products)
+    case "$2" in
+      get)
+        # 服务端对不存在的交易对给的是 HTTP 400 + invalid_argument，不是 404
+        case " ${STUB_PRODUCT_MISSING:-} " in
+          *" $3 "*) echo '{"errorType":"invalid_argument","errorMessage":"the requested product or currency is not supported for trading on this domain"}'
+                    echo 'error: the requested product or currency is not supported for trading on this domain (HTTP 400)' >&2
+                    exit 1 ;;
+        esac
+        if [ -n "${STUB_PRODUCT:-}" ]; then printf '%s\n' "$STUB_PRODUCT"; exit 0; fi
+        case "$3" in
+          AAPL-USD|TSLA-USD) echo '{"product_id":"'"$3"'","product_type":"EQUITY"}' ;;
+          *) echo '{"product_id":"'"$3"'","product_type":"SPOT"}' ;;
+        esac ;;
+      list)
+        if [ -n "${STUB_PRODUCTS:-}" ]; then printf '%s\n' "$STUB_PRODUCTS"
+        else echo '{"products":[],"num_products":0}'; fi ;;
+      *) echo '{}' ;;
+    esac ;;
   balance)
     uuid=${2#portfolio_id==}
     case " ${STUB_DENY:-} " in *" $uuid "*) printf '%s\n' "$DENIED" ;; *) printf '%s\n' "$TODAY" ;; esac ;;

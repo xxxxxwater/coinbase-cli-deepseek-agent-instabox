@@ -4,7 +4,12 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
+VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
 SCRIPTS := $(wildcard scripts/*.sh) install.sh
+.PHONY: version
+version: ## 打印版本号
+	@echo $(VERSION)
+
 .PHONY: help check shellcheck syntax test lint doctor clean
 
 help: ## 显示可用目标

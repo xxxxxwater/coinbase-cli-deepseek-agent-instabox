@@ -46,6 +46,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/cb-portfolio.sh` | 逐个探测哪个组合可访问，`--save` 记住唯一可用的那个 |
 | `scripts/ds-model.sh` | 把 `claude` / `codex` 指向 DeepSeek；key 验证不过则**一个字节都不写** |
 | `scripts/cb-activate-key.sh` | 装载 CDP key：先判算法类型，Ed25519 直接拒绝 |
+| `scripts/cb-products.sh` | 查交易对：详情 / 搜索 / 按计价币列清单 / `--ticker` 只要价格 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |
 | `scripts/coinbase-stack-check.sh` | 开机自检 8 项，可自愈的自动修 |
 | `telegram/bot.mjs` | Telegram 中继器主体（长轮询 + 流式编辑 + 会话续接 + 收文件 + `--selftest`） |

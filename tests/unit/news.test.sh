@@ -152,8 +152,8 @@ assert_contains "$out" "unparseable date" "--include-undated：显式要求才�
 # ---------- 缓存 ----------
 CB_NEWS_FIXTURE_DIR="$FIX" bash "$N" >/dev/null 2>&1
 assert_file "$XDG_CACHE_HOME/coinbase-agent/news.json" "缓存文件已写"
-perms=$(ls -l "$XDG_CACHE_HOME/coinbase-agent/news.json" | cut -c1-10)
-assert_eq "$perms" "-rw-------" "缓存文件权限 600"
+perms=$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode)[-3:])' "$XDG_CACHE_HOME/coinbase-agent/news.json")
+assert_eq "$perms" "600" "缓存文件权限 600（只自己可读）"
 out=$(CB_NEWS_FIXTURE_DIR="$FIX" bash "$N" --json | python3 -c 'import json,sys;d=json.load(sys.stdin);print("srcs=%d"%len(d["items"]))')
 assert_contains "$out" "srcs=" "重复运行不炸（缓存可复用）"
 

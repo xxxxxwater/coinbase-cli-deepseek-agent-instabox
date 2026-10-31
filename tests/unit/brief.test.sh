@@ -31,8 +31,6 @@ assert_contains "$out" "=== 风控 ===" "有风控段"
 assert_contains "$out" "=== 余额 ===" "有余额段"
 assert_contains "$out" "=== 走势 ===" "有走势段"
 assert_contains "$out" "=== 事件 ===" "有事件段"
-order=$(printf '%s\n' "$out" | grep -n '^=== ' | sed 's/:.*//' | tr '\n' ',')
-expected=$(printf '风控\n余额\n走势\n事件\n' | sed 's/$/:/' | head -0; echo "")
 first=$(printf '%s\n' "$out" | grep -n '=== ' | head -1 | cut -d: -f1)
 second=$(printf '%s\n' "$out" | grep -n '=== 余额' | cut -d: -f1)
 assert_eq "$([ "$first" -lt "$second" ] && echo ordered)" "ordered" "风控排在余额之前（先看允不允许，再谈别的）"

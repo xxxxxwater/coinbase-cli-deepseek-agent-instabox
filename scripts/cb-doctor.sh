@@ -30,7 +30,9 @@ done
 ROWS=()          # "状态<TAB>编号<TAB>说明<TAB>建议"
 FAILED=0; WARNED=0
 
-# record <ok|warn|fail> <编号> <说明> [建议]
+# record <ok|warn|fail|skip> <编号> <说明> [建议]
+# skip 用于"这次显式不检查"（比如离线环境跳过出网探测）。
+# 它既不算通过也不算失败 —— 假装通过会骗人，算失败又会误报。
 record() {
   local st=$1 id=$2 msg=$3 hint=${4:-}
   ROWS+=("${st}"$'\t'"${id}"$'\t'"${msg}"$'\t'"${hint}")
@@ -40,12 +42,13 @@ record() {
   esac
   [ "$JSON" -eq 1 ] && return 0
   if [ "$QUIET" -eq 1 ]; then
-    case "$st" in ok) return 0 ;; esac
+    case "$st" in ok|skip) return 0 ;; esac
   fi
   case "$st" in
     ok)   printf '%s✓%s %-22s %s\n' "$CB_C_GRN" "$CB_C_OFF" "$id" "$msg" ;;
     warn) printf '%s!%s %-22s %s\n' "$CB_C_YEL" "$CB_C_OFF" "$id" "$msg" ;;
     fail) printf '%s✗%s %-22s %s\n' "$CB_C_RED" "$CB_C_OFF" "$id" "$msg" ;;
+    skip) printf '%s-%s %-22s %s\n' "$CB_C_DIM" "$CB_C_OFF" "$id" "$msg" ;;
   esac
   [ -n "$hint" ] && printf '   %s→ %s%s\n' "$CB_C_DIM" "$hint" "$CB_C_OFF"
   return 0
@@ -101,14 +104,24 @@ esac
 node_trace() {
   NODE_EXTRA_OFF=$1 node -e '
 const https = require("https");
-https.get("https://api.coinbase.com/cdn-cgi/trace", r => {
+// 没有出口的机器上这个请求会一直挂着 —— 诊断工具自己不能没有超时。
+// 两层保险：请求 3 秒超时 + 5 秒硬看门狗（超时就静默退出，让上层记 warn）。
+const watchdog = setTimeout(() => process.exit(0), 5000);
+const done = (s) => { clearTimeout(watchdog); process.stdout.write(s || ""); process.exit(0); };
+const req = https.get("https://api.coinbase.com/cdn-cgi/trace", { timeout: 3000 }, r => {
   let b = ""; r.on("data", d => b += d); r.on("end", () => {
-    const m = b.match(/^ip=(.*)$/m); process.stdout.write(m ? m[1].trim() : "");
+    const m = b.match(/^ip=(.*)$/m);
+    done(m ? m[1].trim() : "");
   });
-}).on("error", () => process.stdout.write(""));
+});
+req.on("timeout", () => { req.destroy(); done(""); });
+req.on("error", () => done(""));
 ' 2>/dev/null
 }
 
+if [ "${CB_DOCTOR_SKIP_NET:-0}" = 1 ]; then
+  record skip net.edge "已跳过出网检查（CB_DOCTOR_SKIP_NET=1）"
+else
 edge_node=$(node_trace "")
 if [ -z "$edge_node" ]; then
   record warn net.edge "node 取不到 api.coinbase.com/cdn-cgi/trace" "网络或 DNS 异常，其它检查结果可能不可信"
@@ -122,13 +135,14 @@ fi
 
 # curl 的出口单独看一眼：它和 node 不一致是正常的（curl 不读 NODE_OPTIONS），
 # 但如果 curl 也是 IPv6，说明这台机器默认路由偏好 IPv6，IPv4 白名单迟早出问题。
-edge_curl=$(curl -s --max-time 8 https://api.coinbase.com/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')
+edge_curl=$(curl -s --max-time 3 https://api.coinbase.com/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p')
 if [ -n "$edge_curl" ] && printf '%s' "$edge_curl" | grep -q ':'; then
   record warn net.curl "curl 走的是 IPv6：${edge_curl}" \
     "curl 不读 NODE_OPTIONS，所以它和 CLI 的出口不同是正常的；
           这里只作提示：只要有程序不强制 IPv4，就会撞上同一个白名单问题"
 elif [ -n "$edge_curl" ]; then
   record ok net.curl "curl 出网也是 IPv4：${edge_curl}"
+fi
 fi
 
 # ---------- 5. key 文件：类型、权限 ----------
@@ -266,11 +280,15 @@ for line in sys.stdin:
 print(json.dumps({"ok": not any(r["status"] == "fail" for r in rows),
                   "failed": sum(r["status"] == "fail" for r in rows),
                   "warned": sum(r["status"] == "warn" for r in rows),
+                  "skipped": sum(r["status"] == "skip" for r in rows),
                   "checks": rows}, ensure_ascii=False, indent=2))'
 else
   cb_hr
-  if [ "$FAILED" -eq 0 ] && [ "$WARNED" -eq 0 ]; then
+  skipped=$(printf '%s\n' "${ROWS[@]}" | grep -c $'^skip\t' || true)
+  if [ "$FAILED" -eq 0 ] && [ "$WARNED" -eq 0 ] && [ "${skipped:-0}" -eq 0 ]; then
     printf '%s全部 %d 项检查通过。%s\n' "$CB_C_GRN" "${#ROWS[@]}" "$CB_C_OFF"
+  elif [ "$FAILED" -eq 0 ] && [ "$WARNED" -eq 0 ]; then
+    printf '%s%d 项通过，%d 项跳过。%s\n' "$CB_C_GRN" "${#ROWS[@]}" "${skipped:-0}" "$CB_C_OFF"
   elif [ "$FAILED" -eq 0 ]; then
     printf '%s%d 项通过，%d 项警告，没有失败项。%s\n' "$CB_C_YEL" "${#ROWS[@]}" "$WARNED" "$CB_C_OFF"
   else

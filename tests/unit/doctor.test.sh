@@ -4,6 +4,8 @@
 setup
 DOC="$ROOT/scripts/cb-doctor.sh"
 export COINBASE_PORTFOLIO_ID="11111111-1111-1111-1111-111111111111"
+# 测试必须能离线跑：不依赖 api.coinbase.com 的真实响应
+export CB_DOCTOR_SKIP_NET=1
 
 mkkey() {  # mkkey <path> <ec|ed25519>
   # PEM 的 BEGIN/END 标记拆开拼，避免仓库里出现完整私钥标记串
@@ -16,6 +18,11 @@ mkkey() {  # mkkey <path> <ec|ed25519>
   fi
   chmod 600 "$1"
 }
+
+echo "离线开关：出网检查应记为 skip 而不是 fail"
+out=$(COINBASE_KEY_FILE="$TESTDIR/ec.json" NODE_OPTIONS=--dns-result-order=ipv4first bash "$DOC" 2>&1)
+assert_contains "$out" "已跳过出网检查" "CB_DOCTOR_SKIP_NET=1 时跳过出网检查"
+printf '%s' "$out" | grep -q '✗ net.edge' && bad "跳过时不应报失败" || ok "跳过时不报失败"
 
 echo "ECDSA key：key.type 通过"
 mkkey "$TESTDIR/ec.json" ec

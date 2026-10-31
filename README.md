@@ -1,5 +1,9 @@
 # coinbase-cli-deepseek-agent-instabox
 
+[![CI](https://github.com/xxxxxxxwater/coinbase-cli-deepseek-agent-instabox/actions/workflows/ci.yml/badge.svg)](https://github.com/xxxxxxxwater/coinbase-cli-deepseek-agent-instabox/actions/workflows/ci.yml)
+[![version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 把 **Coinbase for Agents CLI**、**DeepSeek V4.1 Flash** 和 **Telegram 中继器** 三件事，在一台 instabox 云主机上配成一套可用、可自愈、开机自动恢复的 agent 环境。
 
 目标很具体：**在手机上用中文跟自己的交易服务器对话**，让它查余额、看行情、下单。
@@ -36,15 +40,35 @@ coinbase-stack.service  (oneshot, 开机执行)
 
 | 路径 | 作用 |
 |---|---|
+| `install.sh` | 一键装：环境检查 → CLI → 脚本 → 配置 → systemd → 自检 |
+| `scripts/lib/config.sh` | 共享库：配置读写、颜色、NODE_OPTIONS、组合 UUID、JSON 判断 |
+| `scripts/cb-doctor.sh` | 一键诊断 15~16 项，`--json` 给监控/CI 用，退出码 0/1/2 |
+| `scripts/cb-portfolio.sh` | 逐个探测哪个组合可访问，`--save` 记住唯一可用的那个 |
 | `scripts/ds-model.sh` | 把 `claude` / `codex` 指向 DeepSeek；key 验证不过则**一个字节都不写** |
 | `scripts/cb-activate-key.sh` | 装载 CDP key：先判算法类型，Ed25519 直接拒绝 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |
 | `scripts/coinbase-stack-check.sh` | 开机自检 8 项，可自愈的自动修 |
-| `telegram/bot.mjs` | Telegram 中继器主体（长轮询 + 流式编辑 + 会话续接 + 收文件） |
+| `telegram/bot.mjs` | Telegram 中继器主体（长轮询 + 流式编辑 + 会话续接 + 收文件 + `--selftest`） |
+| `telegram/lib/text.mjs` | 按**转义后**长度切块，避开 HTML 实体与 emoji 代理对边界 |
+| `telegram/lib/agent.mjs` | 参数拼装与 stream-json 事件折叠（纯函数，可单测） |
 | `telegram/config.example.json` | 配置模板，复制成 `config.json` 后填值 |
 | `systemd/*.service` | 两个单元文件 |
 | `docs/COINBASE-SETUP.md` | Coinbase 侧完整排查记录与报错对照表 |
 | `docs/TELEGRAM-RELAY.md` | 中继器运维手册 |
+| `docs/ARCHITECTURE.md` | 分层职责、设计取舍、一次调用的完整链路、开机时序 |
+| `docs/TROUBLESHOOTING.md` | **按报错查**：为什么 → 怎么确认 → 怎么修 |
+| `tests/` | 158 条断言：`helper.sh` + `run.sh` + `unit/*.test.sh` |
+
+## 一键安装
+
+```bash
+git clone https://github.com/xxxxxxxwater/coinbase-cli-deepseek-agent-instabox.git && cd coinbase-cli-deepseek-agent-instabox
+./install.sh                                        # 装到 ~/.local/bin
+./install.sh --systemd --key-file ~/cdp_api_key.json --portfolio <uuid>
+```
+
+装完直接 `cb-doctor.sh` 看还差什么。不想让它动的东西它不碰：
+不写你的 CDP 私钥、不改 agent 配置、不动已有 systemd 单元。
 
 ## 快速开始
 
@@ -172,6 +196,20 @@ Wants=network-online.target instabox-data-init.service
 | `COINBASE_PORTFOLIO_ID` | 组合 UUID。不设的话 `cb-trade.sh` 和自检里的 balance 会跳过 |
 | `DEEPSEEK_API_KEY` | `ds-model.sh` 写进 `~/.config/deepseek/env`，供 codex 使用 |
 
+## 测试与 CI
+
+```bash
+make test      # 158 条断言，纯离线，11 秒
+make check     # 语法 + shellcheck + 测试
+```
+
+CI 跑在 GitHub 托管 runner 上（别用会关机的自托管机器，那等于没有 CI），
+两个 job：静态检查（shellcheck + `bash -n`）+ 密钥扫描
+（`git grep` 找 `sk-*`、bot token、PEM 标记）。
+
+密钥扫描对测试夹具也生效 —— 夹具里的 PEM 标记是拼接出来的，
+所以仓库里不会出现完整标记串，而扫描能力没有削弱。
+
 ## 验证清单
 
 ```bash
@@ -199,7 +237,9 @@ systemctl status tg-agent        # active (running)
   （`capabilities: []`），疑似需在 Coinbase 账户侧开通并绑定组合，API key 无法自行获得。
 - **不带 portfolio_id 的 balance 会 403**：默认组合不在这把 key 的授权范围里，属正常。
 - **期货未开通**：`derivatives` 接口返回 400。
-- **Telegram 真实入站消息**：自动化测试只能覆盖解析/白名单/分发路径，首次使用请先发 `/start`。
+- **Telegram 真实入站消息**：已验证（journal 里有完整一轮：`增量=481次 编辑=6次 字数=1019`）。
+  自动化测试仍只覆盖解析/白名单/分发，改完中继器建议跑一次
+  `node telegram/bot.mjs --selftest` 确认 agent 那条路是通的。
 
 ## 许可
 

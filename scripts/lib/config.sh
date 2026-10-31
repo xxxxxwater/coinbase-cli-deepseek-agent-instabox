@@ -107,6 +107,21 @@ cb_ensure_node_options() {
   cb_dim "已为本次执行补上 NODE_OPTIONS=${CB_NODE_OPT}（避免 IPv6 出网 401）" >&2
 }
 
+# cb_timeout <秒> <命令...>：带超时地跑一条命令。
+# macOS 没有 GNU timeout（也没有 gtimeout，除非装了 coreutils），而"探测"这种东西
+# 最怕的就是某一条卡住把整张表拖死。所以：有 timeout 用它，有 gtimeout 用它，
+# 都没有就直跑 —— 缺一个工具不该让脚本直接报 "command not found"。
+cb_timeout() {
+  local secs=$1; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
 # ---------- JSON ----------
 
 # cb_json_get <字段>：从 stdin 读 JSON 取一个顶层字段，失败返回 1

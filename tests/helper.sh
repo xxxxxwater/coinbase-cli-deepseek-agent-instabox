@@ -76,9 +76,22 @@ case "$1" in
       fetch) printf '%s\n' "${STUB_X402_FETCH:-{\"ok\":true\}}"; exit "${STUB_X402_FETCH_RC:-0}" ;;
       *) echo '{}' ;;
     esac ;;
+  convert)
+    # Convert 只允许 default portfolio —— 真机对非默认组合固定返回这个 403
+    if [ "${STUB_CONVERT_OK:-0}" = "1" ]; then printf '%s\n' "${STUB_CONVERT:-{\"quote_id\":\"q1\"}}"
+    else printf '%s\n' '{"errorType":"permission_denied","errorMessage":"Convert can only be performed on default portfolio"}'
+         echo 'error: Convert can only be performed on default portfolio (HTTP 403)' >&2; exit 1; fi ;;
+  derivatives)
+    printf '%s\n' '{"errorType":"invalid_argument","errorMessage":"invalid request"}'; exit 1 ;;
   orders)
     case "${2:-}" in
-      preview) printf '%s\n' "$STUB_PREVIEW" ;;
+      preview)
+        # 股票没有独立预览路径 —— 真机固定返回这句
+        case "$*" in
+          *AAPL-USD*|*TSLA-USD*)
+            printf '%s\n' '{"errorType":"invalid_argument","errorMessage":"standalone order preview is not available for equities; orders_create performs an internal brokerage preview and cannot bypass preview failures"}' ;;
+          *) printf '%s\n' "$STUB_PREVIEW" ;;
+        esac ;;
       list)
         if [ -n "${STUB_ORDERS:-}" ]; then printf '%s\n' "$STUB_ORDERS"
         else printf '%s\n' '{"orders":[],"has_next":false,"cursor":""}'; fi ;;

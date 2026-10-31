@@ -2,6 +2,13 @@
 
 ### Added
 
+- `scripts/cb-capability.sh`：能力面矩阵。只读探测十个产品面（鉴权/现货行情/余额/
+  下单路径/股票可见性/股票下单/Convert/x402/期货/组合），标 `✓ / ✗ / ·` 并写清依据。
+  股票刻意不试 `orders create`（真下单会成交，探测不该有副作用）。`--strict` 可接自检。
+  18 条断言 + `docs/CAPABILITIES.md`（含两种 403 形态对照表）。
+- `cb_timeout`（`scripts/lib/config.sh`）：有 `timeout` 用它、有 `gtimeout` 用它、
+  都没有就直跑 —— macOS 上两者都没有，缺一个工具不该让脚本报 command not found。
+
 - `scripts/cb-x402.sh`：x402 付费数据目录与取回。`resources` 把 6 位原子单位
   换算成 USDC 并支持 `--search`/`--limit`；`fetch` 默认只打印将要执行的命令，
   `--commit` 才真付，且必须过 `cb-risk.sh` 闸门（kill switch / 单笔上限）——

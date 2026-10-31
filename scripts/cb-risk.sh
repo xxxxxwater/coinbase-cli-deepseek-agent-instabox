@@ -9,6 +9,7 @@
 #   cb-risk.sh show                # 当前限额 + 今日已用 + 最近几条记录
 #   cb-risk.sh set <键> <值>       # max_single_trade_usd / max_daily_usd /
 #                                  # max_orders_per_hour / allowed_products
+#                                  # max_transfer_usd / allow_non_usd_transfer
 #   cb-risk.sh check <产品> <BUY|SELL> <名义金额> [类型]   # 只检查不记录，给脚本预检用
 #   cb-risk.sh kill                # 立刻禁止所有下单（不删限额配置）
 #   cb-risk.sh resume              # 解除 kill switch
@@ -52,6 +53,13 @@ case "$MODE" in
         printf '%s' "$v" | grep -Eq '^[0-9]+([.][0-9]+)?$' || {
           printf '错误: %s 要是非负数字（收到 %s）\n' "$k" "$v" >&2; exit 2; } ;;
       allowed_products) ;;
+      allow_non_usd_transfer|max_transfer_usd)
+        if [ "$k" = "max_transfer_usd" ]; then
+          printf '%s' "$v" | grep -Eq '^[0-9]+([.][0-9]+)?$' || {
+            printf '错误: %s 要是非负数字（收到 %s）\n' "$k" "$v" >&2; exit 2; }
+        else
+          case "$v" in true|false) ;; *) printf '错误: %s 只能是 true 或 false\n' "$k" >&2; exit 2 ;; esac
+        fi ;;
       *) printf '错误: 未知键 %s\n' "$k" >&2; exit 2 ;;
     esac
     cb_cfg_set "$k" "$v" || { printf '错误: 写配置失败\n' >&2; exit 3; }
@@ -118,12 +126,16 @@ for line in sys.stdin:
     [ -f "$j" ] && printf '记录: %s 条\n' "$(wc -l < "$j" | tr -d ' ')" || echo "记录: 0 条"
     if cb_risk_killed; then cb_bad "kill switch: 开着（下单被禁止）"; else cb_ok "kill switch: 关着（可下单）"; fi
     cb_hr
-    for k in max_single_trade_usd max_daily_usd max_orders_per_hour allowed_products; do
+    for k in max_single_trade_usd max_daily_usd max_orders_per_hour max_transfer_usd allowed_products allow_non_usd_transfer; do
       v=$(cb_risk_cfg "$k" "")
       if [ -n "$v" ]; then
         printf '%-22s %s\n' "$k" "$v"
       else
-        printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置，不限${CB_C_OFF}"
+        # 布尔键"没设置"不等于"不限"——它有个安全默认值，得如实说
+        case "$k" in
+          allow_non_usd_transfer) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置（默认 false：非稳定币 transfer 不允许）${CB_C_OFF}" ;;
+          *) printf '%-22s %s\n' "$k" "${CB_C_DIM}未设置，不限${CB_C_OFF}" ;;
+        esac
       fi
     done
     read -r spent count <<EOF

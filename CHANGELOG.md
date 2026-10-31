@@ -2,6 +2,12 @@
 
 ### Added
 
+- 守卫覆盖 `transfer` 与 `x402 fetch/pay`。此前只拦 `orders create`，而 `transfer`
+  在组合之间搬钱、`x402` 会花钱，两者 agent 都能直接敲 —— 锁了门但窗户开着。
+  新增配置键 `max_transfer_usd`（缺省回落 `max_single_trade_usd`）与
+  `allow_non_usd_transfer`（默认 false：非稳定币算不出美元金额，就不放行）。
+  `transfer --dry-run` 放行。44 条断言。
+
 - `scripts/cb-candles.sh`：K 线。给 OHLCV 的同时画一条 sparkline —— agent 拿一屏
   JSON 看不出形状，一行块字符能。`--granularity` / `--limit` / `--json`。
   两处刻意区分：股票（EQUITY）没有 K 线接口 ≠ 该区间无成交；服务端错误负载也是

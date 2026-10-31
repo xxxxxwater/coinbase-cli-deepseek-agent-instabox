@@ -94,14 +94,14 @@ if [ "${1:-}" = "orders" ]; then
   esac
 fi
 
-if [ "$is_mutating" -eq 1 ]; then
-  # 风控库与配置都在 cb-trade.sh 旁边；找不到就明确报错，绝不"拦不住还放行"
+# 加载风控库：找不到就 exit 78，绝不"拦不住还放行"
+load_lib() {
   LIB=""
   for cand in "${SELF}/../scripts/lib" "${SELF}/../lib" "$HOME" "$HOME/lib"; do
     if [ -r "${cand}/risk.sh" ] && [ -r "${cand}/config.sh" ]; then LIB=$(cd "$cand" && pwd); break; fi
   done
   if [ -z "$LIB" ]; then
-    echo "coinbase-guard: 找不到风控库（risk.sh/config.sh），为安全起见拒绝执行 orders ${2}。" >&2
+    echo "coinbase-guard: 找不到风控库（risk.sh/config.sh），为安全起见拒绝执行 ${1:-这次操作}。" >&2
     echo "                把这些脚本装上，或临时移出 PATH 以绕过（你知道你在做什么）。" >&2
     exit 78
   fi
@@ -109,6 +109,82 @@ if [ "$is_mutating" -eq 1 ]; then
   . "${LIB}/config.sh"
   # shellcheck source=/dev/null
   . "${LIB}/risk.sh"
+}
+
+# 从参数里取一个字段：既认 `k=v` 也认 `k==v` 和 `--k==v`
+arg_field() { # arg_field <键> <参数...>
+  local k=$1; shift
+  local a
+  for a in "$@"; do
+    case "$a" in
+      "${k}=="*) printf '%s' "${a#*=}" | sed 's/^=//'; return 0 ;;
+      "${k}="*)  printf '%s' "${a#*=}"; return 0 ;;
+      "--${k}=="*) printf '%s' "${a#*=}" | sed 's/^=//'; return 0 ;;
+      "--${k}="*)  printf '%s' "${a#*=}"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# x402 花钱：shell 直连 `coinbase x402 fetch/pay` 绕不过 kill switch
+if [ "${1:-}" = "x402" ]; then
+  case "${2:-}" in
+    fetch|pay)
+      load_lib "x402 ${2}"
+      if cb_risk_killed; then
+        cb_risk_journal_add block "X402" BUY x402 0 deny "kill switch 开着（coinbase-guard）"
+        echo "✗ 风控：kill switch 开着，x402 ${2} 被拒绝。（恢复：cb-risk.sh resume）" >&2
+        exit 4
+      fi
+      ;;
+  esac
+  exec "$REAL" "$@"
+fi
+
+# transfer 在组合之间搬钱：同样会改变余额，且 agent 可以直接调
+if [ "${1:-}" = "transfer" ]; then
+  case " $* " in
+    *" --dry-run "*) exec "$REAL" "$@" ;;   # 只预览，不动钱
+  esac
+  load_lib "transfer"
+  if cb_risk_killed; then
+    cb_risk_journal_add block "TRANSFER" "?" transfer 0 deny "kill switch 开着（coinbase-guard）"
+    echo "✗ 风控：kill switch 开着，transfer 被拒绝。（恢复：cb-risk.sh resume）" >&2
+    exit 4
+  fi
+  _amt=$(arg_field amount "$@" || true)
+  _cur=$(arg_field currency "$@" || true)
+  _notional=0
+  case "$(printf '%s' "${_cur:-}" | tr '[:lower:]' '[:upper:]')" in
+    USD|USDC|USDT|DAI|PYUSD)
+      # 稳定币按 1:1 当美元算，这是唯一能不看行情就判断金额的情况
+      _notional=${_amt:-0} ;;
+    "")
+      echo "✗ 风控：transfer 认不出 currency —— 判断不了金额，已拒绝。" >&2
+      exit 78 ;;
+    *)
+      if [ "$(cb_risk_cfg allow_non_usd_transfer false)" != "true" ]; then
+        cb_risk_journal_add block "TRANSFER:${_cur}" "?" transfer 0 deny "非稳定币 transfer 未授权（coinbase-guard）"
+        echo "✗ 风控：transfer 的币种 ${_cur} 不是稳定币，金额无法折成美元，默认不允许。" >&2
+        echo "        确认要允许：cb-risk.sh set allow_non_usd_transfer true" >&2
+        exit 4
+      fi ;;
+  esac
+  _lim=$(cb_risk_cfg max_transfer_usd "$(cb_risk_cfg max_single_trade_usd "")")
+  if [ -n "${_lim:-}" ] && [ "${_notional:-0}" != "0" ]; then
+    if python3 -c "import sys; sys.exit(0 if float('${_notional}') <= float('${_lim}') else 1)" 2>/dev/null; then :; else
+      cb_risk_journal_add block "TRANSFER:${_cur}" "?" transfer "${_notional}" deny "超过 transfer 上限 ${_lim}（coinbase-guard）"
+      echo "✗ 风控：transfer ${_amt} ${_cur} 超过上限 ${_lim} USD，已拒绝。" >&2
+      echo "        调整：cb-risk.sh set max_transfer_usd <金额>" >&2
+      exit 4
+    fi
+  fi
+  cb_risk_journal_add exec "TRANSFER:${_cur:-?}" "?" transfer "${_notional}" submitted "guard 放行"
+  exec "$REAL" "$@"
+fi
+
+if [ "$is_mutating" -eq 1 ]; then
+  load_lib "orders ${2}"
 
   if cb_risk_killed; then
     cb_risk_journal_add block "${CB_GUARD_PRODUCT:-unknown}" "${CB_GUARD_SIDE:-?}" "guard" "0" deny "kill switch 开着（coinbase-guard）"

@@ -105,4 +105,46 @@ out=$(PATH="$GB:/usr/bin:/bin" bash "$GUARD" --version 2>&1); rc=$?
 assert_exit "$rc" 127 "找不到真程序：退出码 127（不会自己 exec 自己）"
 assert_contains "$out" "找不到真正的 coinbase" "找不到真程序：说清原因"
 
+# ---------- transfer：在组合之间搬钱 ----------
+bash "$ROOT/scripts/cb-risk.sh" resume >/dev/null 2>&1
+bash "$ROOT/scripts/cb-risk.sh" set max_single_trade_usd 100 >/dev/null 2>&1
+: > "$FAKE_LOG"
+
+out=$(bash "$GUARD" transfer amount=5 currency=USD from=A to=B --dry-run 2>&1); rc=$?
+assert_exit "$rc" 0 "transfer --dry-run 放行（只预览不动钱）"
+assert_contains "$(cat "$FAKE_LOG")" "transfer" "--dry-run 真的交给了真程序"
+
+out=$(bash "$GUARD" transfer amount=500 currency=USD from=A to=B 2>&1); rc=$?
+assert_exit "$rc" 4 "transfer 超单笔上限被拒"
+assert_contains "$out" "超过上限" "说清是超上限"
+assert_not_contains "$(cat "$FAKE_LOG")" "amount=500" "被拒时真程序没收到（一个请求都没发）"
+
+out=$(bash "$GUARD" transfer amount=0.1 currency=BTC from=A to=B 2>&1); rc=$?
+assert_exit "$rc" 4 "非稳定币 transfer 默认被拒"
+assert_contains "$out" "allow_non_usd_transfer" "给出开关名"
+
+bash "$ROOT/scripts/cb-risk.sh" set allow_non_usd_transfer true >/dev/null 2>&1
+out=$(bash "$GUARD" transfer amount=0.1 currency=BTC from=A to=B 2>&1); rc=$?
+assert_exit "$rc" 0 "允许后非稳定币 transfer 放行"
+
+bash "$ROOT/scripts/cb-risk.sh" kill >/dev/null 2>&1
+out=$(bash "$GUARD" transfer amount=1 currency=USDC from=A to=B 2>&1); rc=$?
+assert_exit "$rc" 4 "kill switch 下 transfer 被拒"
+assert_contains "$out" "kill switch" "点明是 kill switch"
+
+# ---------- x402：shell 直连也要过 kill switch ----------
+out=$(bash "$GUARD" x402 fetch resource=https://example.com/x 2>&1); rc=$?
+assert_exit "$rc" 4 "kill switch 下 x402 fetch 被拒"
+
+bash "$ROOT/scripts/cb-risk.sh" resume >/dev/null 2>&1
+: > "$FAKE_LOG"
+out=$(bash "$GUARD" x402 fetch resource=https://example.com/x 2>&1); rc=$?
+assert_exit "$rc" 0 "kill switch 关掉后 x402 放行"
+assert_contains "$(cat "$FAKE_LOG")" "x402 fetch" "x402 真的交给了真程序"
+
+# 账本里这些动作都要留痕（路径由 cb_risk_journal 决定，找一下）
+JOURNAL=$(find "$TESTDIR" -name 'journal.jsonl' 2>/dev/null | head -1)
+assert_contains "$(cat "$JOURNAL" 2>/dev/null || echo)" "TRANSFER" "账本记下了 transfer"
+assert_contains "$(cat "$JOURNAL" 2>/dev/null || echo)" "X402" "账本记下了 x402"
+
 finish

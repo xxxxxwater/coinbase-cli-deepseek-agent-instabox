@@ -150,23 +150,26 @@ cat > "$RT/journal.jsonl" <<'JL'
 {"ts":"2026-10-31T01:00:00Z","epoch":1,"day":"2026-10-31","event":"preview","product":"BTC-USD","side":"BUY","type":"market","notional":50.0,"result":"preview","reason":""}
 {"ts":"2026-10-31T01:01:00Z","epoch":2,"day":"2026-10-31","event":"exec","product":"BTC-USD","side":"BUY","type":"market","notional":50.0,"result":"ok","reason":""}
 {"ts":"2026-10-31T01:02:00Z","epoch":3,"day":"2026-10-31","event":"exec","product":"ETH-USD","side":"BUY","type":"market","notional":100.0,"result":"error","reason":"preview insufficient fund"}
-{"ts":"2026-10-31T01:03:00Z","epoch":4,"day":"2026-10-31","event":"block","product":"SOL-USD","side":"BUY","type":"market","notional":5.0,"result":"deny","reason":"kill switch 开着，所有下单被禁止"}
+{"ts":"2026-10-31T01:03:00Z","epoch":4,"day":"2026-10-31","event":"block","product":"SOL-USD","side":"BUY","type":"market","notional":5.0,"result":"deny","reason":"kill switch 开着"}
 {"ts":"2026-10-31T01:04:00Z","epoch":5,"day":"2026-10-31","event":"paper","product":"BTC-USD","side":"SELL","type":"market","notional":7.5,"result":"paper","reason":""}
+{"ts":"2026-10-31T01:05:00Z","epoch":6,"day":"2026-10-31","event":"block","product":"ETH-USD","side":"BUY","type":"market","notional":9.0,"result":"deny","reason":"kill switch 开着（coinbase-guard）"}
 JL
 export RCFG="$RT/config.json"
 
 out=$(CB_CONFIG="$RCFG" bash "$R" report 2>&1); rc=$?
 assert_exit "$rc" 0 "report：退出码 0"
-assert_contains "$out" "记录: 5 条" "report：条数正确"
+assert_contains "$out" "记录: 6 条" "report：条数正确"
 assert_contains "$out" "按结果:" "report：有按结果分组"
 assert_contains "$out" "exec/ok" "report：能看出成功的提交"
 assert_contains "$out" "被拒原因:" "report：有被拒原因段"
 assert_contains "$out" "kill switch 开着" "report：拒绝原因保留原文"
 assert_contains "$out" "SOL-USD" "report：被拒最多的产品"
+assert_contains "$out" "按拦截层:" "report：区分脚本层和守卫层"
+assert_contains "$out" "脚本层" "report：说出脚本层拦了几笔"
 
 out=$(CB_CONFIG="$RCFG" bash "$R" report --json 2>&1)
-if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d["total"]==5 and d["by_result"]["exec/ok"]["count"]==1 and round(d["by_result"]["exec/ok"]["notional"],2)==50.0 else 1)' 2>/dev/null; then
-  ok "report --json：total 与各结果金额都对"
+if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d["total"]==6 and d["by_result"]["exec/ok"]["count"]==1 and round(d["by_result"]["exec/ok"]["notional"],2)==50.0 and d["blocked_reasons"].get("kill switch 开着")==2 and d["blocked_by_layer"].get("coinbase-guard")==1 else 1)' 2>/dev/null; then
+  ok "report --json：total / 金额 / 同因归一 / 拦截层都对"
 else
   bad "report --json：JSON 内容不对" "$(printf '%.200s' "$out")"
 fi

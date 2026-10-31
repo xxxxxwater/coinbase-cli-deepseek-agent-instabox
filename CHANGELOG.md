@@ -15,6 +15,10 @@
 - `tests/unit/mcpproxy.test.sh`：17 条断言，覆盖透传、闸门、金额算不出来时拒绝、
   参数顺序、风控库缺失时 fail closed。
 
+- `cb-risk.sh report` 把"同一句理由但来自不同层"的原因归并：守卫会在理由末尾
+  标 `（coinbase-guard）`，真机上于是出现了"kill switch 开着"和
+  "kill switch 开着（coinbase-guard）"两组。现在按拦截层拆开统计，理由本身归一。
+
 ### Fixed
 - 守卫接管 `mcp` 时漏了 `child.stdout.pipe(process.stdout)`，客户端只会看到请求
   发出去、永远等不到响应（`claude mcp list` 报 30 秒超时，看起来像网络问题）。

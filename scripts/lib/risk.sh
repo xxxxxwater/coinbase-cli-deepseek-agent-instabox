@@ -179,7 +179,7 @@ sys.exit(0 if float('$spent') + float('$notional') > float('$max_daily') else 1)
 # 把账本汇总成人能看的样子。审计的用处不是"有日志"，而是"能回答这一周发生了什么"。
 cb_risk_report() {
   python3 - "$(cb_risk_journal)" "$@" <<'PYREPORT'
-import json, sys, time
+import json, re, sys, time
 from collections import Counter, defaultdict
 
 path = sys.argv[1]
@@ -220,6 +220,19 @@ if days:
 by_result = defaultdict(lambda: [0, 0.0])   # key -> [笔数, 金额]
 reasons = Counter()
 by_product = Counter()
+by_layer = Counter()
+
+# 同一句理由，脚本层和守卫层会各写一遍（守卫会在末尾标注来源）。
+# 真机上 14 条 block 被拆成"kill switch 开着"和"kill switch 开着（coinbase-guard）"
+# 两组 —— 汇总的意义是"为什么被拒"，不该被来源拆散。
+LAYER_RE = re.compile(r"[（(](coinbase-guard)[)）]\s*$")
+
+
+def split_layer(reason):
+    m = LAYER_RE.search(reason)
+    if m:
+        return LAYER_RE.sub("", reason).strip(), m.group(1)
+    return reason, "script"
 day_min = day_max = None
 for r in rows:
     key = "%s/%s" % (r.get("event") or "?", r.get("result") or "?")
@@ -229,7 +242,9 @@ for r in rows:
     except Exception:
         pass
     if (r.get("event") or "") == "block":
-        reasons[r.get("reason") or "（未写原因）"] += 1
+        why, layer = split_layer(r.get("reason") or "（未写原因）")
+        reasons[why] += 1
+        by_layer[layer] += 1
         by_product[r.get("product") or "?"] += 1
     d = r.get("day") or ""
     if d:
@@ -242,6 +257,7 @@ if as_json:
         "range": {"from": day_min, "to": day_max},
         "by_result": {k: {"count": v[0], "notional": round(v[1], 8)} for k, v in sorted(by_result.items())},
         "blocked_reasons": dict(reasons.most_common()),
+        "blocked_by_layer": dict(by_layer.most_common()),
         "blocked_by_product": dict(by_product.most_common()),
     }
     print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=False))
@@ -263,6 +279,12 @@ if reasons:
     print("被拒原因:")
     for why, c in reasons.most_common():
         print("  %3d × %s" % (c, why))
+    if by_layer:
+        print()
+        print("按拦截层:")
+        for layer, c in by_layer.most_common():
+            name = "守卫（二进制/mcp）" if layer != "script" else "脚本层"
+            print("  %-16s %d 笔" % (name, c))
     print()
     print("被拒最多的产品:")
     for prod, c in by_product.most_common(5):

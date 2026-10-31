@@ -62,6 +62,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `docs/ARCHITECTURE.md` | 分层职责、设计取舍、一次调用的完整链路、开机时序 |
 | `docs/TROUBLESHOOTING.md` | **按报错查**：为什么 → 怎么确认 → 怎么修 |
 | `docs/RISK.md` | 风控闸门与审计日志：规则、什么算额度、为什么闸门在预览之前 |
+| `guard/coinbase` | PATH 守卫：拦 `orders create` / `orders cancel`，其它透明转发 |
 | `tests/` | 158 条断言：`helper.sh` + `run.sh` + `unit/*.test.sh` |
 
 ## 一键安装

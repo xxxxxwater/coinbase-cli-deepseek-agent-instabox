@@ -84,11 +84,34 @@ cb-risk.sh journal 10          # 最近 10 条记录
 "让 agent 反复试一下"本身就是个坏习惯：试十次、错九次、第十次对了，
 日志里只剩一片噪音。先拦掉明显越界的，再让服务端去看细节。
 
+## 兜底：PATH 上的守卫
+
+`cb-trade.sh` 过闸门，但 agent 也能直接敲 `coinbase orders create …`，
+那就绕过了限额。`guard/coinbase` 是一个放在 PATH 前面的透明 wrapper：
+
+```bash
+sudo install -m 755 guard/coinbase /data/home/bin/coinbase   # 或者任何在 PATH 前面的目录
+export PATH=/data/home/bin:$PATH
+```
+
+行为：
+
+| 调用 | 结果 |
+|---|---|
+| `coinbase --version` / `balance` / `products …` | 原样转发 |
+| `coinbase orders preview …` | 原样转发（只读） |
+| `coinbase orders create …` / `orders cancel …` | 先判 kill switch 与产品白名单，通过才转发 |
+| 找不到风控库 | **拒绝**（退出码 78），不是放行 |
+| PATH 里找不到真的 coinbase | 退出码 127，绝不自己 exec 自己 |
+
+刻意**不**在 wrapper 里算金额限额：市价单的名义金额要查行情才知道，
+每拦一次就多打一次 API 是本末倒置。金额归 `cb-trade.sh`，它本来就查过价格。
+
 ## 已知限制
 
 - 名义金额是**估算**：市价 SELL 用查询到的价格乘数量，滑点不算在内。
   限额因此是"大概没超标"，不是会计意义上的精确。
-- 只约束**本仓库的脚本**。绕过 `cb-trade.sh` 直接调 `coinbase orders create`
-  不受这里约束 —— 真要在服务端层面兜底，得靠 Coinbase 侧的 key 权限
-  （例如只给某一个组合的权限，让越界操作在服务端就 403）。
+- 装上 PATH 守卫后，`coinbase orders create` 也拦得住（kill switch + 白名单）；
+  但**金额限额仍然只管 `cb-trade.sh`**。真要在服务端层面兜底，还得靠
+  Coinbase 侧的 key 权限（只给某一个组合，让越界操作在服务端就 403）。
 - 没有实现 P&L 熔断（见上）。

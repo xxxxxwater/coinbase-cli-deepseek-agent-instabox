@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# coinbase — 放在 PATH 前面的守卫，只拦"提交订单"这一个动作。
+#
+# 为什么需要它：cb-trade.sh 会过风控，但 agent 也可以直接调
+# `coinbase orders create …`，那就绕过了所有限额。这个 wrapper 把
+# create 这一个子命令接住：kill switch 开着或产品不在白名单时直接拒绝，
+# 否则原封不动交给真正的 coinbase。
+#
+# 拦什么、不拦什么（故意的）：
+#   - 拦 orders create 的 kill switch 与产品白名单 —— 这两个判断只看本地状态，
+#     不需要价格，所以能在不额外打 API 的前提下拦住。
+#   - 不在这里算金额限额：市价单的名义金额要查行情才知道，而 wrapper 每拦一次
+#     就多打一次 API 是本末倒置。金额限额归 cb-trade.sh，它本来就查过价格。
+#   - 其它子命令一律透明转发，包括 orders preview（只读）。
+
+set -uo pipefail
+
+SELF=$(cd "$(dirname "$0")" && pwd)
+
+# 找真正的 coinbase：跳过本文件所在目录，避免自己 exec 自己
+REAL=""
+IFS=':' read -r -a _paths <<< "${PATH:-/usr/local/bin:/usr/bin:/bin}"
+for d in "${_paths[@]}"; do
+  [ -n "$d" ] || continue
+  cand="$d/coinbase"
+  [ -x "$cand" ] || continue
+  [ "$(cd "$d" && pwd)" = "$SELF" ] && continue
+  REAL=$cand
+  break
+done
+
+if [ -z "$REAL" ]; then
+  echo "coinbase-guard: 在 PATH 里找不到真正的 coinbase（本文件所在目录已被跳过）" >&2
+  echo "                PATH=${PATH}" >&2
+  exit 127
+fi
+
+# 只有 orders create / orders cancel 这类会改变状态的动作才需要过闸；
+# 其余（--version、balance、products …）直接放行。
+is_mutating=0
+if [ "${1:-}" = "orders" ]; then
+  case "${2:-}" in
+    create|cancel) is_mutating=1 ;;
+  esac
+fi
+
+if [ "$is_mutating" -eq 1 ]; then
+  # 风控库与配置都在 cb-trade.sh 旁边；找不到就明确报错，绝不"拦不住还放行"
+  LIB=""
+  for cand in "${SELF}/../scripts/lib" "${SELF}/../lib" "$HOME" "$HOME/lib"; do
+    if [ -r "${cand}/risk.sh" ] && [ -r "${cand}/config.sh" ]; then LIB=$(cd "$cand" && pwd); break; fi
+  done
+  if [ -z "$LIB" ]; then
+    echo "coinbase-guard: 找不到风控库（risk.sh/config.sh），为安全起见拒绝执行 orders ${2}。" >&2
+    echo "                把这些脚本装上，或临时移出 PATH 以绕过（你知道你在做什么）。" >&2
+    exit 78
+  fi
+  # shellcheck source=/dev/null
+  . "${LIB}/config.sh"
+  # shellcheck source=/dev/null
+  . "${LIB}/risk.sh"
+
+  if cb_risk_killed; then
+    cb_risk_journal_add block "${CB_GUARD_PRODUCT:-unknown}" "${CB_GUARD_SIDE:-?}" "guard" "0" deny "kill switch 开着（coinbase-guard）"
+    echo "✗ 风控：kill switch 开着，orders ${2} 被拒绝。（恢复：cb-risk.sh resume）" >&2
+    exit 4
+  fi
+
+  allow=$(cb_risk_cfg allowed_products "")
+  if [ -n "$allow" ]; then
+    prod=""
+    for a in "$@"; do
+      case "$a" in product_id==*) prod=${a#product_id==} ;; esac
+    done
+    if [ -n "$prod" ]; then
+      case ",$(printf '%s' "$allow" | tr -d ' ')," in
+        *",$prod,"*) ;;
+        *)
+          cb_risk_journal_add block "$prod" "?" "guard" "0" deny "不在白名单（coinbase-guard）"
+          echo "✗ 风控：${prod} 不在白名单 ${allow}，orders ${2} 被拒绝。" >&2
+          exit 4 ;;
+      esac
+    fi
+  fi
+fi
+
+exec "$REAL" "$@"

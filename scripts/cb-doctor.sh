@@ -52,7 +52,14 @@ record() {
 }
 
 # 一行结论 + 自动判级：0=ok 其它=fail
-verdict() { [ "$1" -eq 0 ] && record ok "$2" "$3" || record fail "$2" "$3" "${4:-}"; }
+# A && B || C 不是 if-else：B 失败时 C 也会跑，这里必须写清楚
+verdict() {
+  if [ "$1" -eq 0 ]; then
+    record ok "$2" "$3"
+  else
+    record fail "$2" "$3" "${4:-}"
+  fi
+}
 
 command -v python3 >/dev/null || { echo "缺少 python3" >&2; exit 2; }
 
@@ -231,12 +238,18 @@ fi
 # ---------- 10. 可选：Telegram 中继器 ----------
 if command -v systemctl >/dev/null; then
   if st=$(systemctl is-active tg-agent 2>/dev/null); then
-    [ "$st" = "active" ] && record ok relay.tg "tg-agent active" \
-                         || record warn relay.tg "tg-agent ${st}"
+    if [ "$st" = "active" ]; then
+      record ok relay.tg "tg-agent active"
+    else
+      record warn relay.tg "tg-agent ${st}"
+    fi
   fi
   if st=$(systemctl is-active coinbase-stack 2>/dev/null); then
-    [ "$st" = "active" ] && record ok relay.stack "coinbase-stack active（开机自检已通过）" \
-                         || record warn relay.stack "coinbase-stack ${st}" "journalctl -u coinbase-stack -n 50"
+    if [ "$st" = "active" ]; then
+      record ok relay.stack "coinbase-stack active（开机自检已通过）"
+    else
+      record warn relay.stack "coinbase-stack ${st}" "journalctl -u coinbase-stack -n 50"
+    fi
   fi
 fi
 

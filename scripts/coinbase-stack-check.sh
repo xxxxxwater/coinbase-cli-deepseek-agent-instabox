@@ -46,21 +46,23 @@ if ! grep -q 'dns-result-order=ipv4first' /etc/environment 2>/dev/null; then
 fi
 sudo -n sh -c "test -f /etc/profile.d/99-node-ipv4.sh || printf 'export NODE_OPTIONS=\"%s\"\n' '$NODE_OPT' > /etc/profile.d/99-node-ipv4.sh" >/dev/null 2>&1
 nopt=$(grep -c 'dns-result-order=ipv4first' /etc/environment 2>/dev/null || echo 0)
-[ "$nopt" -ge 1 ] && check 0 node_options || check 1 node_options
+if [ "$nopt" -ge 1 ]; then check 0 node_options; else check 1 node_options; fi
 
 # ---------- 2. coinbase 二进制 ----------
 if [ ! -e /usr/local/bin/coinbase ]; then
   say "coinbase 缺失，重装 npm 包"
+  # 日志文件是当前用户所有，重定向故意留在这层；
+  # shellcheck disable=SC2024
   sudo -n npm install -g @coinbase/coinbase-cli >>"$LOG" 2>&1
 fi
 ver=$(timeout 60 coinbase --version 2>&1 | tr -d '\n')
-[ -n "$ver" ] && check 0 "cli($ver)" || check 1 cli
+if [ -n "$ver" ]; then check 0 "cli($ver)"; else check 1 cli; fi
 
 # ---------- 3. key 文件 ----------
 if [ -f "$KEY" ]; then
   chmod 600 "$KEY" 2>/dev/null
   mode=$(stat -c %a "$KEY")
-  [ "$mode" = 600 ] && check 0 keyfile || check 1 keyfile
+  if [ "$mode" = 600 ]; then check 0 keyfile; else check 1 keyfile; fi
 else
   say "缺少 key 文件 $KEY"
   check 1 keyfile
@@ -73,17 +75,26 @@ if [ "$envname" != live ]; then
   timeout 90 coinbase env live --key-file "$KEY" --allow-plaintext-secrets >>"$LOG" 2>&1
   envname=$(timeout 60 coinbase env 2>/dev/null | awk '/^\*/{print $2}' | head -1)
 fi
-[ "$envname" = live ] && check 0 env_live || check 1 env_live
+if [ "$envname" = live ]; then check 0 env_live; else check 1 env_live; fi
 
 # ---------- 5. skills ----------
-sk_c=$(ls "$HOME_DIR/.claude/skills" 2>/dev/null | wc -l)
-sk_x=$(ls "$HOME_DIR/.codex/skills" 2>/dev/null | wc -l)
-{ [ "$sk_c" -ge 9 ] && [ "$sk_x" -ge 9 ]; } && check 0 "skills($sk_c/$sk_x)" || check 1 "skills($sk_c/$sk_x)"
+# 用 find 而不是 ls|wc：技能目录名带空格或特殊字符时 ls 会数错
+sk_c=$(find "$HOME_DIR/.claude/skills" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+sk_x=$(find "$HOME_DIR/.codex/skills" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+if [ "$sk_c" -ge 9 ] && [ "$sk_x" -ge 9 ]; then
+  check 0 "skills($sk_c/$sk_x)"
+else
+  check 1 "skills($sk_c/$sk_x)"
+fi
 
 # ---------- 6. MCP 注册 ----------
 m_c=$(grep -c '"coinbase"' "$HOME_DIR/.claude.json" 2>/dev/null || echo 0)
 m_x=$(grep -c '^\[mcp_servers.coinbase\]' "$HOME_DIR/.codex/config.toml" 2>/dev/null || echo 0)
-{ [ "$m_c" -ge 1 ] && [ "$m_x" -ge 1 ]; } && check 0 mcp || check 1 "mcp(claude=$m_c codex=$m_x)"
+if [ "$m_c" -ge 1 ] && [ "$m_x" -ge 1 ]; then
+  check 0 mcp
+else
+  check 1 "mcp(claude=$m_c codex=$m_x)"
+fi
 
 # ---------- 7. 端到端连通性（开机时网络可能刚起来，最多重试 3 次）----------
 perm=""

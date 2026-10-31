@@ -42,7 +42,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$PRODUCT" ] && [ -n "$SIDE" ] && [ -n "$AMOUNT" ] || { usage; exit 2; }
+if [ -z "$PRODUCT" ] || [ -z "$SIDE" ] || [ -z "$AMOUNT" ]; then
+  usage
+  exit 2
+fi
 
 SIDE=$(printf '%s' "$SIDE" | tr '[:lower:]' '[:upper:]')
 case "$SIDE" in BUY|SELL) ;; *) cb_die "side 必须是 BUY 或 SELL（收到 ${SIDE}）" ;; esac

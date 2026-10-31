@@ -17,8 +17,6 @@ SKIP_TEST=0
 ENV_FILE="/data/home/.config/deepseek/env"
 CLAUDE_SETTINGS="/data/home/.claude/settings.json"
 CODEX_CONFIG="/data/home/.codex/config.toml"
-BEGIN_MARK='# >>> deepseek-model (managed by ds-model.sh)'
-END_MARK='# <<< deepseek-model'
 
 usage() { sed -n "2,8p" "$0" | sed 's/^# \{0,1\}//'; }
 

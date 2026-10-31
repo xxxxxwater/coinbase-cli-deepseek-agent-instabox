@@ -7,7 +7,8 @@
 #
 # 被 source，不单独执行。source 之后不要 exit（会带走调用者）。
 
-CB_LIB_VERSION=1
+# library 的版本号：调用方可以用来判断接口是否变了
+export CB_LIB_VERSION=1
 CB_CONFIG_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/coinbase-agent/config.json"
 # Node 22 默认 Happy Eyeballs 优先连 IPv6；CDP 门户白名单通常只放行 IPv4。
 # 少了这个变量，所有请求会从白名单外的地址出去，服务端一律 401。

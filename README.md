@@ -49,6 +49,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `scripts/secret-scan.sh` | 扫密钥：**工作区 + 全部提交历史**（删掉的 commit 也能翻出来） |
 | `scripts/cb-config.sh` | 看/改配置：当前生效值来自环境变量还是文件、`set`/`unset`、`path` |
 | `scripts/cb-products.sh` | 查交易对：详情 / 搜索 / 按计价币列清单 / `--ticker` 只要价格 |
+| `scripts/cb-risk.sh` | 下单风控闸门：单笔/当日/每小时限额、产品白名单、kill switch、审计日志 |
 | `scripts/cb-trade.sh` | 下单助手：产品识别 → 余额 → 预览 → 执行；默认只预览，`--commit` 才真下单 |
 | `scripts/coinbase-stack-check.sh` | 开机自检 8 项，可自愈的自动修 |
 | `telegram/bot.mjs` | Telegram 中继器主体（长轮询 + 流式编辑 + 会话续接 + 收文件 + `--selftest`） |
@@ -60,6 +61,7 @@ coinbase-stack.service  (oneshot, 开机执行)
 | `docs/TELEGRAM-RELAY.md` | 中继器运维手册 |
 | `docs/ARCHITECTURE.md` | 分层职责、设计取舍、一次调用的完整链路、开机时序 |
 | `docs/TROUBLESHOOTING.md` | **按报错查**：为什么 → 怎么确认 → 怎么修 |
+| `docs/RISK.md` | 风控闸门与审计日志：规则、什么算额度、为什么闸门在预览之前 |
 | `tests/` | 158 条断言：`helper.sh` + `run.sh` + `unit/*.test.sh` |
 
 ## 一键安装

@@ -3,6 +3,36 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] — 2026-10-31
+
+加一层"绕不过去"的防线。方向参考了现有 agent 交易项目（Hummingbot 的 kill switch、
+TradingAgents 的独立风险复核、tigerpaw 的单笔上限），具体取舍见 `docs/RISK.md`。
+
+### 新增
+
+- `scripts/lib/risk.sh`：风控判定 + 审计账本。账本是
+  `~/.config/coinbase-agent/journal.jsonl`（600、只追加），同时充当限额计数器 ——
+  日志和计数没有第二个真相来源。
+- `scripts/cb-risk.sh`：`show` / `set` / `check` / `kill` / `resume` / `reset` / `journal` / `path`。
+  限额键：`max_single_trade_usd`、`max_daily_usd`、`max_orders_per_hour`、`allowed_products`。
+- `cb-trade.sh --paper`：模拟盘。记 `paper` 事件、打印真正会执行的命令、不调用 create，
+  给 agent 反复演练用。
+- `docs/RISK.md`：规则表、什么算额度、"闸门为什么在预览之前"、以及已知限制。
+- `tests/unit/risk.test.sh`（36 条）：限额、白名单、kill switch、模拟盘、
+  当日累计、每小时笔数、`reset` 归档、以及"被拒只记一条 block"这类记账精度。
+
+### 变更
+
+- `cb-trade.sh` 每笔先过风控闸门（在服务端预览**之前**），并打印名义金额。
+  `--commit` 成功记 `exec/ok`、失败记 `exec/error`，失败不占额度。
+- kill switch 用**文件**表示（`touch` 即生效），不需要改 JSON、不需要重启 ——
+  紧急时谁都能立刻关闸。
+
+### 修复
+
+- `$VAR` 紧跟中文标点导致的 `unbound variable` 又出现两处（`scripts/cb-config.sh`、
+  `scripts/lib/risk.sh`），已统一 `${VAR}` 并由 `tests/unit/multibyte.test.sh` 守着。
+
 ## [1.2.0] — 2026-10-31
 
 补齐"看得见"和"防得住"这两件事。

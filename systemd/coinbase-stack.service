@@ -1,0 +1,22 @@
+[Unit]
+Description=Coinbase for Agents stack — boot self-check and self-heal
+Documentation=file:/data/home/COINBASE-SETUP.md
+RequiresMountsFor=/data/home
+After=network-online.target instabox-data-init.service data.mount
+Wants=network-online.target instabox-data-init.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=user
+Group=user
+Environment=HOME=/data/home
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+Environment=NODE_OPTIONS=--dns-result-order=ipv4first
+ExecStart=/bin/bash /data/home/coinbase-stack-check.sh
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=Telegram Agent Relay (Claude Code / Codex on DeepSeek)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/data/home/tg-agent
+Environment=HOME=/data/home
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/node /data/home/tg-agent/bot.mjs
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

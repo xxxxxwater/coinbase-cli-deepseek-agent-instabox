@@ -1,0 +1,11 @@
+{
+  "token": "<TELEGRAM_BOT_TOKEN>",
+  "allowed_chat_ids": [123456789],
+  "backend": "claude",
+  "model": "deepseek-flash",
+  "models": ["deepseek-flash", "deepseek-v4-pro"],
+  "workdir": "/data/home",
+  "edit_interval_ms": 1200,
+  "max_run_ms": 900000,
+  "deepseek_key": "<DEEPSEEK_API_KEY>"
+}

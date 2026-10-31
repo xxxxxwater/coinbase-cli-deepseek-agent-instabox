@@ -1,0 +1,12 @@
+# 真实密钥与运行时状态，绝不入库
+telegram/config.json
+telegram/state.json
+telegram/uploads/
+cdp_api_key*.json
+*.pem
+*.key
+.env
+*.log
+.coinbase-stack-status.json
+node_modules/
+.DS_Store

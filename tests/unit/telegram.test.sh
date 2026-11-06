@@ -17,6 +17,13 @@ else
   bad "agent.node.mjs 有失败"
 fi
 
+echo "文件接收回归（离线 Telegram mock）"
+if node "$ROOT/tests/unit/upload.node.mjs"; then
+  ok "upload.node.mjs 全部通过"
+else
+  bad "upload.node.mjs 有失败"
+fi
+
 echo "语法检查"
 for f in "$ROOT"/telegram/*.mjs "$ROOT"/telegram/lib/*.mjs; do
   [ -f "$f" ] || continue

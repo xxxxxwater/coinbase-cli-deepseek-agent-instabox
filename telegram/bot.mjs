@@ -580,7 +580,7 @@ async function handleUpload(chatId, msg) {
   await sendText(chatId, "\ud83d\udce5 正在接收文件\u2026");
   try {
     const r = await tg("getFile", { file_id: fileId });
-    const fp = r.result && r.result.file_path;
+    const fp = r && r.file_path;
     if (!fp) throw new Error("getFile 未返回 file_path");
     const resp = await fetch("https://api.telegram.org/file/bot" + TOKEN + "/" + fp);
     if (!resp.ok) throw new Error("下载失败 HTTP " + resp.status);

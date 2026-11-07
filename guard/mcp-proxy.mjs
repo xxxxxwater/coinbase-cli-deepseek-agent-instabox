@@ -56,8 +56,12 @@ function lastPrice(product) {
  * 返回 { notional, why }：算不出时 notional=null，why 说明原因。
  */
 function notionalOf(name, args) {
-  const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+  const num = (v) => ((typeof v !== "number" && typeof v !== "string") ||
+    (typeof v === "string" && !v.trim()) ? null : Number(v));
   if (name === "coinbase_orders_create" || name === "coinbase_orders_edit") {
+    if (!/-(USD|USDC)$/.test(args.product_id || "")) {
+      return { notional: null, why: "计价币不是 USD/USDC，不能当作美元金额" };
+    }
     const quote = num(args.quote_size ?? args.total_quote_size);
     if (quote !== null && Number.isFinite(quote)) {
       return { notional: quote, why: "quote_size" };                 // 市价买入：quote_size 就是花费
@@ -76,24 +80,40 @@ function notionalOf(name, args) {
     return { notional: null, why: "参数里没有 quote_size 也没有 base_size" };
   }
   if (name === "coinbase_transfer") {
+    if (!["USD", "USDC"].includes(args.currency || "")) {
+      return { notional: null, why: "转账币种不是 USD/USDC，不能当作美元金额" };
+    }
     const amt = num(args.amount ?? args.quote_size);
     return amt !== null && Number.isFinite(amt)
       ? { notional: amt, why: "amount" }
       : { notional: null, why: "转账金额未知" };
   }
-  // cancel / close_position / portfolios_*：不改仓位规模，只判 kill switch
-  return { notional: 0, why: "不计金额" };
+  if (name === "coinbase_orders_cancel" || name.startsWith("coinbase_portfolios_")) {
+    return { notional: 0, why: "不计金额" };
+  }
+  // Conversion, x402 payments and close-position can move money. Until their
+  // exposure is reliably valued, never silently reserve zero for them.
+  return { notional: null, why: "该操作尚无可验证的金额估算" };
 }
 
-function check(product, side, type, notional, cb) {
-  // cb-risk.sh check 的签名是 <产品> <side> <金额> [类型] —— 金额在第 3 位，
+function reserve(product, side, type, notional, cb) {
+  // cb-risk.sh reserve 的签名是 <产品> <side> <金额> [类型] —— 金额在第 3 位，
   // 类型是可选第 4 位。参数错位会让账本里的 notional 变成 "market" 之类，
   // python 抛 ValueError、账本静默丢失（真机上就是这么丢了 4 条 block 记录）。
-  const args = [RISK, "check", product || "unknown", side || "BUY",
-    notional === null ? "0" : String(notional), type || "market"];
+  const args = [RISK, "reserve", product || "unknown", side || "BUY",
+    String(notional), type || "market", "mcp"];
   execFile("bash", args, { timeout: 15000 }, (err, stdout, stderr) => {
-    const code = err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-    cb(code, (stdout || "") + (stderr || ""));
+    let code = err && typeof err.code === "number" ? err.code : err ? 1 : 0;
+    // An old/misconfigured risk script may exit zero without reserving. Require
+    // the new protocol before forwarding; stdout alone is not permission.
+    if (code === 0) {
+      try {
+        const receipt = JSON.parse(stdout);
+        if (receipt.status !== "reserved" ||
+            !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(receipt.reservation_id)) code = 4;
+      } catch { code = 4; }
+    }
+    cb(code, code === 4 && !err ? "风控未确认持久预留，已拒绝" : (stdout || "") + (stderr || ""));
   });
 }
 
@@ -117,7 +137,9 @@ child.stdout.pipe(process.stdout);
 // 不要在这里 process.exit()：管道里可能还有没冲出去的响应，
 // 硬退会把最后几条截断（表现为客户端收不到最后一条结果）。
 // 只记退出码，让事件循环自己排空后退出。
-child.on("exit", (c) => { process.exitCode = c ?? 0; });
+child.on("exit", (c) => { process.exitCode = c ?? 1; });
+child.on("error", () => { process.exitCode = 1; });
+child.stdin.on("error", () => { process.exitCode = 1; });
 // 客户端关掉输入后，子进程的输出可能还在路上；等它自己结束再走。
 process.stdout.on("error", () => {});
 
@@ -146,6 +168,12 @@ function handleLine(line) {
     if (!raw.trim()) { child.stdin.write(line + "\n"); return resolve(); }
     let msg;
     try { msg = JSON.parse(raw); } catch { child.stdin.write(line + "\n"); return resolve(); }
+    // MCP uses individual JSON-RPC messages. Forwarding a batch wholesale
+    // would skip the mutation gate for every request inside it.
+    if (Array.isArray(msg)) {
+      process.stdout.write(JSON.stringify(denyReply({ id: null }, "不支持 JSON-RPC batch，已拒绝")) + "\n");
+      return resolve();
+    }
     const isCall = msg && msg.method === "tools/call" && msg.params && msg.params.name;
     if (!isCall || !MUTATING.has(msg.params.name)) { child.stdin.write(line + "\n"); return resolve(); }
 
@@ -159,9 +187,8 @@ function handleLine(line) {
 
     // 金额算不出来时不能当 0 —— 那等于给"未知金额"开了免限额通道。
     // 只有当它确实不涉及金额（cancel 等）才放过，否则拒绝。
-    const amountMatters = name === "coinbase_orders_create" || name === "coinbase_orders_edit" ||
-      name === "coinbase_transfer";
-    if (amountMatters && notional === null) {
+    const amountMatters = name !== "coinbase_orders_cancel" && !name.startsWith("coinbase_portfolios_");
+    if (notional === null || !Number.isFinite(notional) || notional < 0 || (amountMatters && notional === 0)) {
       const whyMsg = `✗ 风控：这笔 ${name} 算不出金额（${why}），无法确认是否在限额内，已拒绝。` +
         `补齐 quote_size（买入）或 limit_price（卖出）后重试。`;
       process.stdout.write(JSON.stringify(denyReply(msg, whyMsg)) + "\n");
@@ -169,8 +196,11 @@ function handleLine(line) {
       return resolve();
     }
 
-    check(product, side, type, notional, (code, out) => {
+    reserve(product, side, type, notional, (code, out) => {
       if (code === 0) {
+        // The durable debit precedes this write. A broken pipe, missing reply,
+        // server error or proxy crash does not prove the operation did not run.
+        // Retain the reservation until explicit exchange reconciliation.
         child.stdin.write(line + "\n");
         return resolve();
       }

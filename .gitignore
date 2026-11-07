@@ -11,3 +11,6 @@ cdp_api_key*.json
 node_modules/
 .DS_Store
 .test-tmp/
+
+__pycache__/
+*.pyc

@@ -11,6 +11,8 @@
 #                                  # max_orders_per_hour / allowed_products
 #                                  # max_transfer_usd / allow_non_usd_transfer
 #   cb-risk.sh check <产品> <BUY|SELL> <名义金额> [类型]   # 只检查不记录，给脚本预检用
+#   cb-risk.sh reserve <产品> <side> <金额> [类型] [来源] # 原子检查并预留
+#   cb-risk.sh reconcile <reservation_id> <accepted|not-submitted> # 人工核对交易所后处理
 #   cb-risk.sh kill                # 立刻禁止所有下单（不删限额配置）
 #   cb-risk.sh resume              # 解除 kill switch
 #   cb-risk.sh reset               # 归档当日账本（限额计数从 0 开始，记录不丢）
@@ -30,9 +32,13 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 && !/^#/ { exit }' "$0"; }
 
 MODE="show"; ARGS=()
+# Parse the command only once. A product/side/type named "reset" must never
+# turn an admission request into an administrative operation.
+case "${1:-}" in
+  show|set|check|reserve|reconcile|kill|resume|reset|journal|path|report|verify) MODE=$1; shift ;;
+esac
 while [ $# -gt 0 ]; do
   case "$1" in
-    show|set|check|kill|resume|reset|journal|path|report|verify) MODE=$1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) case "$1" in
           --json) ARGS+=("$1"); shift ;;
@@ -79,13 +85,17 @@ case "$MODE" in
     ;;
 
   reset)
-    j=$(cb_risk_journal)
-    if [ -f "$j" ] && [ -s "$j" ]; then
-      mv "$j" "${j}.$(date +%Y%m%d-%H%M%S).archived"
-      cb_ok "当日账本已归档，限额计数从 0 开始（记录没删，文件名带时间戳）"
-    else
-      cb_info "账本还是空的，不需要清零"
-    fi
+    cb_risk_ledger reset || exit 4
+    ;;
+
+  reserve)
+    [ ${#ARGS[@]} -ge 3 ] || { printf '错误: reserve 需要 <产品> <side> <金额> [类型] [来源]\n' >&2; exit 2; }
+    cb_risk_reserve "${ARGS[0]}" "${ARGS[1]}" "${ARGS[2]}" "${ARGS[3]:--}" "${ARGS[4]:-script}" || exit 4
+    ;;
+
+  reconcile)
+    [ ${#ARGS[@]} -eq 2 ] || { printf '错误: reconcile 需要 <reservation_id> <accepted|not-submitted>\n' >&2; exit 2; }
+    cb_risk_ledger reconcile "${ARGS[0]}" "${ARGS[1]}" || exit 4
     ;;
 
   check)
@@ -113,7 +123,8 @@ for line in sys.stdin:
     except Exception: print(line); continue
     print("%s  %-8s %-10s %-4s %-6s %10s  %-8s %s" % (
         r.get("ts","")[11:19], r.get("event",""), r.get("product",""), r.get("side",""),
-        r.get("type",""), r.get("notional",0), r.get("result",""), r.get("reason","")))
+        r.get("type",""), r.get("notional",0), r.get("result",""),
+        r.get("reason","") + (" [reservation_id=" + r["reservation_id"] + "]" if r.get("reservation_id") else "")))
 '
     ;;
 
@@ -166,9 +177,8 @@ EOF
         esac
       fi
     done
-    read -r spent count <<EOF
-$(cb_risk_usage)
-EOF
+    usage=$(cb_risk_usage) || exit 4
+    read -r spent count <<< "$usage"
     cb_hr
     printf '今日已用  %s\n最近一小时 %s 笔\n' "$spent" "$count"
     ;;

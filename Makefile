@@ -19,6 +19,8 @@ help: ## 显示可用目标
 syntax: ## 只做语法检查（bash -n / node --check）
 	@for f in $(SCRIPTS); do bash -n "$$f" || exit 1; done
 	@node --check telegram/bot.mjs
+	@node --check guard/mcp-proxy.mjs
+	@python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/lib/risk-ledger.py").read_text())'
 	@echo "syntax OK"
 
 shellcheck: ## 静态检查（需要 shellcheck）

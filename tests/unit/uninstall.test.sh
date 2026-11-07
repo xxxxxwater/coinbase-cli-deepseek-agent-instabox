@@ -4,6 +4,9 @@
 set -uo pipefail
 . "$(dirname "$0")/../helper.sh"
 setup
+# Installer/uninstaller fixtures must never use the caller's real home or network.
+export HOME="$TESTDIR/home" XDG_CONFIG_HOME="$TESTDIR/xdg" CB_DOCTOR_SKIP_NET=1
+mkdir -p "$HOME"
 U="$ROOT/uninstall.sh"
 
 # ---------- 准备一个"装好了"的环境 ----------

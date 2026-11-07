@@ -92,6 +92,9 @@ coinbase orders create product_id=BTC-USD ... # 单等号
 - 金额上限目前只在 `cb-trade.sh` 和 MCP 代理里；shell 直连的
   `quote_size=99999` 只受 kill switch 与白名单约束。
   详见 [SECURITY.md](SECURITY.md) 第三节。
+- 新版 MCP 和 `cb-trade.sh --commit` 使用共享持久预留；失败或未知响应不会自动
+  退还额度。未核对预留跨日保留，并阻止 reset；需先核对交易所，再显式处理。
+  这是保守的本地计数，不是账户级保证。升级和对账步骤见 [RISK.md](RISK.md)。
 
 ## 为什么守卫优先用「包里的原始入口」
 

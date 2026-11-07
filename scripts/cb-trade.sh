@@ -191,18 +191,23 @@ if [ "$COMMIT" -eq 1 ]; then
   fi
   # 预览到确认之间可能有人按下 kill switch —— 这正是 kill switch 存在的场景：
   # 不是"以后别再下"，而是"这一笔现在别下"。所以下单前再判一次。
-  if ! cb_risk_check "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL"; then
-    echo "已在下单前被风控拦下，本笔没有提交。" >&2
+  RESERVATION=$(cb_risk_reserve "$PRODUCT" "$SIDE" "$NOTIONAL" "$OTYPE" cb-trade) || {
+    echo "未能持久预留额度，本笔没有提交。" >&2
     exit 4
-  fi
+  }
+  RESERVATION_ID=$(printf '%s' "$RESERVATION" | cb_json_get reservation_id) || exit 4
+  [ -n "$RESERVATION_ID" ] || exit 4
+  RESERVATION_META=$(printf '%s' "$RESERVATION" | python3 -c 'import json,sys; print(json.dumps({"reservation_id":json.load(sys.stdin)["reservation_id"]}))') || exit 4
+  echo "[预留] ${RESERVATION_ID}（执行后须核对交易所记录，再用 cb-risk.sh reconcile 处理）"
   echo "[执行] coinbase orders create"
   coinbase orders create "${ORDER_ARGS[@]}"
   RC=$?
   if [ "$RC" -eq 0 ]; then
-    cb_risk_journal_add exec "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL" ok "create 返回 0"
+    cb_risk_journal_add exec "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL" ok "create 返回 0；保留预留直至核对" "$RESERVATION_META" || exit 4
   else
-    # 失败的单子也记，但 result 不是 ok —— 它不占当日限额（没成交也没提交成功）
-    cb_risk_journal_add exec "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL" error "create 退出码 ${RC}"
+    # A nonzero exit may follow an accepted request with a lost response.
+    # This audit record never releases the previously reserved exposure.
+    cb_risk_journal_add exec "$PRODUCT" "$SIDE" "$OTYPE" "$NOTIONAL" error "create 退出码 ${RC}；保留预留直至核对" "$RESERVATION_META" || exit 4
   fi
   cb_hr
   echo "退出码: ${RC}"

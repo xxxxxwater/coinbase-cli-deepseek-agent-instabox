@@ -13,7 +13,7 @@ export CB_CONFIG="$CB_CONFIG"
 GB="$TESTDIR/guardbin"; mkdir -p "$GB" "$TESTDIR/scripts/lib"
 cp "$ROOT/guard/coinbase" "$GB/coinbase"
 chmod +x "$GB/coinbase"
-cp "$ROOT/scripts/lib/config.sh" "$ROOT/scripts/lib/risk.sh" "$TESTDIR/scripts/lib/"
+cp "$ROOT/scripts/lib/config.sh" "$ROOT/scripts/lib/risk.sh" "$ROOT/scripts/lib/risk-ledger.py" "$TESTDIR/scripts/lib/"
 
 # 桩（$STUB_DIR/coinbase）就是"真程序"：捕获参数即算被调用。
 # 守卫放在它前面，所以 PATH 顺序是：守卫目录 → 桩目录。

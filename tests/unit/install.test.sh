@@ -35,6 +35,7 @@ assert_exit "$rc" 0 "安装：退出码 0"
 for s in cb-doctor.sh cb-portfolio.sh cb-trade.sh cb-products.sh cb-activate-key.sh ds-model.sh coinbase-stack-check.sh; do
   assert_file_exec "$BIN/$s" "安装：$s 可执行"
 done
+assert_file "$BIN/lib/risk-ledger.py" "安装：持久风控账本辅助程序一起装了"
 assert_file "$BIN/lib/config.sh" "安装：共享库 lib/config.sh 一起装了"
 assert_eq "$(stat -c '%a' "$BIN/lib/config.sh" 2>/dev/null || stat -f '%Lp' "$BIN/lib/config.sh")" "644" "安装：lib 是 644（不是可执行）"
 assert_contains "$out" "不在 PATH 里" "安装：提示 BIN_DIR 不在 PATH"
@@ -44,6 +45,10 @@ assert_contains "$out" "下一步" "安装：结尾给了下一步指引"
 out=$(PATH="$BIN:$PATH" CB_CONFIG="$TESTDIR/c.json" STUB_PRODUCT='{"product_id":"BTC-USD","price":"1","product_type":"SPOT"}' bash "$BIN/cb-products.sh" --ticker BTC-USD 2>&1); rc=$?
 assert_exit "$rc" 0 "装好的 cb-products.sh 能直接跑"
 assert_eq "$out" "1" "装好的 cb-products.sh 找得到 lib/config.sh"
+
+out=$(CB_CONFIG="$TESTDIR/installed-risk/config.json" bash "$BIN/cb-risk.sh" reserve BTC-USD BUY 10 market install-test 2>&1); rc=$?
+assert_exit "$rc" 0 "装好的 cb-risk.sh 可原子预留（离线）"
+assert_contains "$out" '"status": "reserved"' "安装后预留协议完整"
 
 # ---------- 写配置：key-file ----------
 KEYF="$TESTDIR/cdp.json"; printf '{"id":"x","privateKey":"y"}\n' > "$KEYF"

@@ -18,7 +18,7 @@
 # 它同时是审计日志和限额计数器 —— 没有第二个真相来源。
 
 # library 的版本号：调用方可以用来判断接口是否变了
-export CB_RISK_VERSION=1
+export CB_RISK_VERSION=2
 
 cb_risk_dir() {
   local d
@@ -53,62 +53,21 @@ cb_risk_killed() {
 # cb_risk_journal_add <event> <product> <side> <type> <notional> <result> [reason] [extra_json]
 # 账本写不进去必须让人看见：审计缺一行比少拒绝一笔更糟，
 # 而且静默失败会让人以为"这笔被拒了但没记"，其实是"既没记也没拦"。
-cb_risk_journal_add() {
-  local ev=$1 product=$2 side=$3 otype=$4 notional=$5 result=$6 reason=${7:-} extra=${8:-}
-  python3 - "$(cb_risk_journal)" "$ev" "$product" "$side" "$otype" "$notional" "$result" "$reason" "$extra" <<'PYRISK'
-import hashlib, json, os, sys, time
-path, ev, product, side, otype, notional, result, reason, extra = sys.argv[1:10]
-rec = {
-    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "epoch": int(time.time()),
-    "day": time.strftime("%Y-%m-%d"),
-    "event": ev,
-    "product": product,
-    "side": side,
-    "type": otype,
-    "notional": float(notional) if notional not in ("", "None") else 0.0,
-    "result": result,
+cb_risk_ledger() {
+  python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/risk-ledger.py" "$1" "$(cb_risk_journal)" "${@:2}"
 }
-if reason:
-    rec["reason"] = reason
-if extra:
-    try:
-        rec.update(json.loads(extra))
-    except Exception:
-        rec["extra_raw"] = extra
-# 哈希链：每行带 prev（上一行的 h）与 h（本行内容+prev 的 sha256）。
-# 账本的价值在于"被改过能看出来"——不然它只是一份可以随便编辑的文本。
-def canon(r):
-    body = {k: v for k, v in r.items() if k not in ("prev", "h")}
-    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
-prev = ""
-try:
-    with open(path, "r", encoding="utf-8") as f:
-        lines = [ln for ln in f.read().splitlines() if ln.strip()]
-    if lines:
-        prev = json.loads(lines[-1]).get("h", "") or ""
-except FileNotFoundError:
-    prev = ""
-except Exception:
-    prev = ""
+cb_risk_journal_add() {
+  cb_risk_ledger append "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "${8:-}"
+}
 
-rec["prev"] = prev
-rec["h"] = hashlib.sha256((prev + canon(rec)).encode("utf-8")).hexdigest()
-
-fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-with os.fdopen(fd, "a") as f:
-    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-PYRISK
-  local _rc=$?
-  if [ "$_rc" -ne 0 ]; then
-    printf '⚠ 风控账本写入失败（%s）：这笔操作可能没有被记录\n' "$(cb_risk_journal)" >&2
-  fi
-  return 0
+# Atomic admission and durable reservation. Only reconciliation can release it.
+cb_risk_reserve() {
+  cb_risk_ledger reserve "$1" "$2" "$3" "${4:--}" "${5:-script}"
 }
 
 # cb_risk_usage：打印 "<今日已用金额> <本小时已提交笔数>"
-# 金额只算成功的，笔数算所有尝试（含失败）——两者口径不同，故意的。
+# 金额包含未核对预留；笔数包含预留尝试，终态审计不重复计数。
 # cb_risk_verify: 校验哈希链。返回 0 全部可验证；1 发现断链/被改；2 有旧格式行（不可验证）
 cb_risk_verify() {
   python3 - "$(cb_risk_journal)" <<'PYVERIFY'
@@ -155,38 +114,7 @@ print("共 %d 行，哈希链完整（每行都与前一行相连且内容未改
 PYVERIFY
 }
 
-cb_risk_usage() {
-  python3 - "$(cb_risk_journal)" <<'PYRISK'
-import json, sys, time
-path = sys.argv[1]
-now = time.time()
-today = time.strftime("%Y-%m-%d")
-spent = 0.0
-last_hour = 0
-try:
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-            except Exception:
-                continue
-            if r.get("event") != "exec":
-                continue
-            # 金额只算成功提交的：失败的单子没成交，不该吃掉当日额度。
-            if r.get("result") in ("ok", "accepted", "submitted") and r.get("day") == today:
-                spent += float(r.get("notional") or 0)
-            # 笔数算所有提交尝试：限额是为了防止把账户和 API 打爆，
-            # 而失败的尝试同样在打它们 —— 只在成功时才限流等于没限。
-            if now - float(r.get("epoch") or 0) <= 3600:
-                last_hour += 1
-except FileNotFoundError:
-    pass
-print("%.8f %d" % (spent, last_hour))
-PYRISK
-}
+cb_risk_usage() { cb_risk_ledger usage; }
 
 
 # cb_risk_p0_file：cb-news.sh 写的 P0 标记文件（同一路径，风控不联网）
@@ -219,6 +147,7 @@ cb_risk_tighten_state() {
     *) printf 'off 1 0 0'; return 0 ;;
   esac
   hours=$(cb_risk_cfg tighten_hours 6)
+  hours=$(python3 -c 'from decimal import Decimal; import sys; n=Decimal(sys.argv[1]); assert n.is_finite() and 0 <= n <= 87600 and n == n.to_integral_value(); print(int(n))' "$hours") || return 4
   factor=$(cb_risk_cfg tighten_factor 0.25)
   read -r count latest <<EOF
 $(cb_risk_p0_info)
@@ -238,7 +167,15 @@ EOF
 # 通过返回 0；被拒打印原因并返回 4。规则全部来自配置，没有硬编码的魔法数。
 cb_risk_check() {
   local product=$1 side=$2 otype=$3 notional=$4
-  local max_single max_daily max_hour allow spent count
+  local max_single max_daily max_hour allow spent count usage tighten_factor tighten_hours
+  max_single=$(cb_risk_cfg max_single_trade_usd "")
+  max_daily=$(cb_risk_cfg max_daily_usd "")
+  max_hour=$(cb_risk_cfg max_orders_per_hour "")
+  tighten_factor=$(cb_risk_cfg tighten_factor 0.25)
+  tighten_hours=$(cb_risk_cfg tighten_hours 6)
+  if ! cb_risk_ledger validate "$notional" "$max_single" "$max_daily" "$max_hour" "$tighten_factor" "$tighten_hours" "$(cb_config_path)"; then
+    return 4
+  fi
 
   if cb_risk_killed; then
     cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "kill switch 开着"
@@ -253,10 +190,10 @@ EOF
   note=""
   max_single=$(cb_risk_cfg max_single_trade_usd "")
   if [ "$t_on" = "on" ] && [ -n "$max_single" ]; then
-    max_single=$(python3 -c "print('%.8f' % (float('$max_single') * float('$t_factor')))" 2>/dev/null || printf '%s' "$max_single")
+    max_single=$(python3 -c 'from decimal import Decimal, getcontext; import sys; getcontext().prec=1000; print(Decimal(sys.argv[1]) * Decimal(sys.argv[2]))' "$max_single" "$t_factor") || return 4
     note="（事件收紧：${t_count} 条 P0 在 $(( t_age / 60 )) 分钟前，上限 ×${t_factor}）"
   fi
-  if [ -n "$max_single" ] && python3 -c "import sys; sys.exit(0 if float('$notional') > float('$max_single') else 1)" 2>/dev/null; then
+  if [ -n "$max_single" ] && python3 -c 'from decimal import Decimal, getcontext; import sys; getcontext().prec=1000; sys.exit(0 if Decimal(sys.argv[1]) > Decimal(sys.argv[2]) else 1)' "$notional" "$max_single" 2>/dev/null; then
     cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过单笔上限 $max_single${note}"
     cb_bad "风控：本笔名义金额 ${notional} 超过单笔上限 ${max_single}${note} —— cb-risk.sh show 看当前限额"
     return 4
@@ -273,21 +210,18 @@ EOF
     esac
   fi
 
-  read -r spent count <<EOF
-$(cb_risk_usage)
-EOF
+  usage=$(cb_risk_usage) || return 4
+  read -r spent count <<< "$usage"
 
   max_daily=$(cb_risk_cfg max_daily_usd "")
-  if [ -n "$max_daily" ] && python3 -c "
-import sys
-sys.exit(0 if float('$spent') + float('$notional') > float('$max_daily') else 1)" 2>/dev/null; then
+  if [ -n "$max_daily" ] && python3 -c 'from decimal import Decimal, getcontext; import sys; getcontext().prec=1000; sys.exit(0 if Decimal(sys.argv[1]) + Decimal(sys.argv[2]) > Decimal(sys.argv[3]) else 1)' "$spent" "$notional" "$max_daily" 2>/dev/null; then
     cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过当日上限 ${max_daily}（已用 ${spent}）"
-    cb_bad "风控：今日已用 ${spent}，再加本笔 ${notional} 会超过当日上限 ${max_daily} —— cb-risk.sh reset 可清零当日账本"
+    cb_bad "风控：今日已用 ${spent}，再加本笔 ${notional} 会超过当日上限 ${max_daily} —— 请先核对账本与交易所记录"
     return 4
   fi
 
   max_hour=$(cb_risk_cfg max_orders_per_hour "")
-  if [ -n "$max_hour" ] && [ "$count" -ge "$max_hour" ] 2>/dev/null; then
+  if [ -n "$max_hour" ] && python3 -c 'from decimal import Decimal; import sys; sys.exit(0 if Decimal(sys.argv[1]) >= Decimal(sys.argv[2]) else 1)' "$count" "$max_hour"; then
     cb_risk_journal_add block "$product" "$side" "$otype" "$notional" deny "超过每小时上限 $max_hour"
     cb_bad "风控：达到每小时上限 ${max_hour} —— 最近一小时已提交 ${count} 笔（失败的也算）"
     return 4

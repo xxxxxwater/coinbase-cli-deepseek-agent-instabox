@@ -30,8 +30,8 @@ process.stdin.on("data", (c) => {
 });
 EOF
 
-# 假风控。调用形式是 `risk.sh check <产品> <side> <金额> [类型]`，
-# 所以脚本视角：$1=check $2=产品 $3=side $4=金额 $5=类型。
+# 假风控。调用形式是 `risk.sh reserve <产品> <side> <金额> [类型]`，
+# 所以脚本视角：$1=reserve $2=产品 $3=side $4=金额 $5=类型。
 # 把金额和类型记到 risk.args，用来断言参数没有错位（错位过一次，账本静默丢记录）。
 cat > "$TESTDIR/risk.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -43,6 +43,7 @@ if awk -v n="$4" 'BEGIN{exit !(n>100)}'; then
   echo "✗ 风控：单笔 $4 USD 超过上限 100" >&2
   exit 4
 fi
+printf '%s\n' '{"status":"reserved","reservation_id":"00000000-0000-0000-0000-000000000001"}'
 exit 0
 EOF
 chmod +x "$TESTDIR/risk.sh"

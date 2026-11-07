@@ -96,7 +96,7 @@ for f in "$HERE"/scripts/*.sh; do
   install -m 755 "$f" "$BIN_DIR/$(basename "$f")"
 done
 if [ -d "$HERE/scripts/lib" ]; then
-  for f in "$HERE"/scripts/lib/*.sh; do
+  for f in "$HERE"/scripts/lib/*.sh "$HERE"/scripts/lib/*.py; do
     [ -f "$f" ] || continue
     install -m 644 "$f" "$BIN_DIR/lib/$(basename "$f")"
   done

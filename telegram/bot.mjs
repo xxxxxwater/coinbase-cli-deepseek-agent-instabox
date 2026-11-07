@@ -740,4 +740,3 @@ if (process.argv.includes("--selftest")) {
 
 // 导出给自检/测试用
 export { handleUpdate, handlePrompt, COMMANDS, spawnAgent };
-

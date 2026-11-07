@@ -87,9 +87,15 @@ function sessionKey(chatId) {
   return `${chatId}:${c.backend}:${c.model}`;
 }
 function getSession(chatId) { return state.sessions[sessionKey(chatId)] || null; }
+// Only in-flight runs need generations; a restart cannot have an old callback.
+const sessionGenerations = new Map();
 function setSession(chatId, sid) {
-  if (sid) state.sessions[sessionKey(chatId)] = sid;
-  else delete state.sessions[sessionKey(chatId)];
+  const key = sessionKey(chatId);
+  if (sid) state.sessions[key] = sid;
+  else {
+    delete state.sessions[key];
+    sessionGenerations.set(key, (sessionGenerations.get(key) || 0) + 1);
+  }
   saveState();
 }
 
@@ -176,6 +182,8 @@ function buildCodexArgs(chatId, prompt) {
 
 function spawnAgent(chatId, prompt, onDelta, onThinking) {
   const c = chatState(chatId);
+  const runSessionKey = sessionKey(chatId);
+  const runGeneration = sessionGenerations.get(runSessionKey) || 0;
   const spec = c.backend === "codex" ? buildCodexArgs(chatId, prompt) : buildClaudeArgs(chatId, prompt);
 
   const env = buildAgentEnv({
@@ -224,7 +232,12 @@ function spawnAgent(chatId, prompt, onDelta, onThinking) {
 
     const finish = (code, signal) => {
       running.delete(String(chatId));
-      if (acc.sessionId) setSession(chatId, acc.sessionId);
+      // A /new invalidates older runs, even when the slot was already empty.
+      // A model/backend switch must not redirect this result into another slot.
+      if (acc.sessionId && (sessionGenerations.get(runSessionKey) || 0) === runGeneration) {
+        state.sessions[runSessionKey] = acc.sessionId;
+        saveState();
+      }
       const text = (acc.finalResult || acc.text || "").trim();
       resolve({
         ok: !killed && !acc.resultError,

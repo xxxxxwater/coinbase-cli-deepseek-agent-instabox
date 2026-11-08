@@ -55,8 +55,6 @@ RC=$?
 
 if [ "$AS_JSON" -eq 1 ]; then
   printf '%s\n' "$RAW"
-  [ "$RC" -eq 0 ] || exit 6
-  exit 0
 fi
 
 printf '%s' "$RAW" | cb_is_json && JSON_OK=1 || JSON_OK=0
@@ -83,6 +81,9 @@ if [ "$JSON_OK" -eq 0 ]; then
   printf '%s\n' "$RAW" | head -6 >&2
   exit 6
 fi
+
+[ "$RC" -eq 0 ] || { cb_bad "接口调用失败"; exit 6; }
+[ "$AS_JSON" -eq 0 ] || exit 0
 
 printf '%s' "$RAW" | PRODUCT="$PRODUCT" GRAN="$GRAN" python3 -c '
 import json, os, sys, datetime

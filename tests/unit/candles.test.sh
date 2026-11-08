@@ -27,7 +27,8 @@ assert_contains "$out" "不覆盖股票" "说清是接口不覆盖"
 assert_not_contains "$out" "没有成交" "不把接口缺失说成没成交"
 
 # 4. --json 原样输出
-out=$(bash "$C" --json 2>/dev/null)
+out=$(bash "$C" --json 2>/dev/null); rc=$?
+assert_exit "$rc" 0 "--json success exits 0"
 assert_contains "$out" '"candles"' "--json 原样给出响应"
 
 # 5. 参数校验
@@ -47,6 +48,21 @@ assert_exit "$rc" 0 "--help 退出码 0"
 # 6. 服务端报错 → 退出码 6，且不假装成功
 out=$(STUB_CANDLES='{"errorType":"invalid_argument","errorMessage":"nope"}' bash "$C" 2>&1); rc=$?
 assert_exit "$rc" 6 "接口失败退出码 6"
+
+# JSON changes presentation, not whether an API response succeeded.
+error_payload='{"errorType":"invalid_argument","errorMessage":"nope"}'
+out=$(STUB_CANDLES="$error_payload" bash "$C" --json 2>"$TESTDIR/stderr"); rc=$?
+assert_exit "$rc" 6 "--json rejects error payload even when CLI exits 0"
+assert_eq "$out" "$error_payload" "--json preserves raw error payload on stdout"
+assert_contains "$(cat "$TESTDIR/stderr")" "nope" "error diagnostic goes to stderr"
+for mode in '' '--json'; do
+  out=$(STUB_CANDLES='{"candles":[]}' STUB_CANDLES_RC=1 bash "$C" ${mode:+"$mode"} 2>/dev/null); rc=$?
+  assert_exit "$rc" 6 "nonzero CLI exit fails in mode ${mode:-rendered}"
+done
+assert_eq "$out" '{"candles":[]}' "--json preserves output on nonzero CLI exit"
+out=$(STUB_CANDLES='not JSON' bash "$C" --json 2>/dev/null); rc=$?
+assert_exit "$rc" 6 "--json rejects malformed response consistently with rendered mode"
+assert_eq "$out" 'not JSON' "--json preserves malformed response"
 
 # 7. 空 K 线（现货无成交）的说法与股票不同
 out=$(STUB_CANDLES='{"candles":[]}' bash "$C" SOL-USD 2>/dev/null)

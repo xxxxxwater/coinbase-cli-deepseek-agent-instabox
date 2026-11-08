@@ -56,7 +56,6 @@ RC=$?
 if [ "$AS_JSON" -eq 1 ]; then
   printf '%s\n' "$RAW"
 fi
-[ "$RC" -eq 0 ] || { cb_bad "接口调用失败"; exit 6; }
 
 printf '%s' "$RAW" | cb_is_json && JSON_OK=1 || JSON_OK=0
 # 是 JSON 不等于成功：服务端的错误负载也是 JSON（errorType/errorMessage），
@@ -83,6 +82,7 @@ if [ "$JSON_OK" -eq 0 ]; then
   exit 6
 fi
 
+[ "$RC" -eq 0 ] || { cb_bad "接口调用失败"; exit 6; }
 [ "$AS_JSON" -eq 0 ] || exit 0
 
 printf '%s' "$RAW" | PRODUCT="$PRODUCT" GRAN="$GRAN" python3 -c '

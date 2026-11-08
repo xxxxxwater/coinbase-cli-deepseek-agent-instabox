@@ -67,7 +67,8 @@ assert_contains "$out" "（跳过）" "--candles 0：走势段跳过"
 # ---------- 板块失败必须说出来 ----------
 BAD="$TESTDIR/bad"; mkdir -p "$BAD"
 printf 'not xml at all <<<' > "$BAD/sec_press.xml"
-out=$(CB_NEWS_FIXTURE_DIR="$BAD" bash "$B" --news 2 --candles 0 2>&1); rc=$?
+# A failed source is only a total failure when no usable cache exists.
+out=$(XDG_CACHE_HOME="$TESTDIR/empty-cache" CB_NEWS_FIXTURE_DIR="$BAD" bash "$B" --news 2 --candles 0 2>&1); rc=$?
 assert_exit "$rc" 1 "新闻全失败：整份简报退出码 1（缺失不能当正常）"
 assert_contains "$out" "=== 事件 ===" "新闻解析失败：事件段仍然存在"
 assert_contains "$out" "所有新闻源都失败了" "新闻解析失败：说清是源全失败"

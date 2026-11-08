@@ -279,7 +279,8 @@ def parse_when(s):
 # ---- 缓存：per-source etag / last-modified / items ----
 # 缓存带版本号：日期解析逻辑一旦改动，旧缓存里存的 epoch 就是错的，
 # 继续复用会让"三天前的新闻"永远显示成最新的（踩过：缓存里全是 epoch=0）。
-CACHE_VERSION = 2
+# v2 may already contain zeroed timestamps: discard validators and refetch.
+CACHE_VERSION = 3
 cache = {"version": CACHE_VERSION, "sources": {}}
 if not NO_CACHE and os.path.exists(CACHE):
     try:
@@ -330,7 +331,7 @@ for sid, name, trust, url in targets:
             parsed = parse_feed(raw)
             fetched += 1
         except urllib.error.HTTPError as e:
-            if e.code == 304 and entry.get("items"):
+            if e.code == 304 and "items" in entry:
                 parsed = entry["items"]
                 not_modified += 1
             else:
@@ -342,7 +343,8 @@ for sid, name, trust, url in targets:
 
     items = []
     for it in parsed:
-        ts = parse_when(it.get("published", ""))
+        # Cache entries are normalized already; epoch=0 must stay unknown.
+        ts = it["epoch"] if "epoch" in it else parse_when(it.get("published", ""))
         cat, pri, analysis = classify(it["title"], trust)
         items.append({
             "source": sid, "source_name": name, "trust": trust,

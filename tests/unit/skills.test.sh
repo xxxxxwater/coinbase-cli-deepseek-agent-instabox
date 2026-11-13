@@ -47,4 +47,40 @@ assert_exit "$rc" 2 "--dir 缺参数退出码 2"
 out=$(bash "$C" --help 2>&1); rc=$?
 assert_exit "$rc" 0 "--help 退出码 0"
 
+# 6. 含空格目标始终是一个目录，不允许 sync 在错误目录自检成功
+D4="$TESTDIR/agent skills"
+mk "$D4" coinbase; mk "$D4" coinbase-trading
+out=$(bash "$C" verify --dir "$D4" 2>&1); rc=$?
+assert_exit "$rc" 0 "含空格完整路径 verify 成功"
+
+mkdir -p "$TESTDIR/work"
+D5="$TESTDIR/new skills"
+: > "$STUB_LOG"
+out=$(cd "$TESTDIR/work" && bash "$C" sync --dir "$D5" 2>&1); rc=$?
+assert_exit "$rc" 0 "含空格完整路径 sync 成功"
+assert_file "$D5/coinbase-trading/SKILL.md" "sync 写入完整目标"
+adds=$(grep -c '^skills add ' "$STUB_LOG")
+assert_eq "$adds" 1 "自定义目标只安装一次"
+if [ ! -e "$TESTDIR/new" ] && [ ! -e "$TESTDIR/work/skills" ]; then
+  ok "不产生分裂目录"
+else
+  bad "不应产生分裂目录"
+fi
+
+# 7. HOME 含空格时保留默认双目录以及仅已存在一侧的行为
+H="$TESTDIR/home space"
+out=$(cd "$TESTDIR/work" && HOME="$H" bash "$C" sync 2>&1); rc=$?
+assert_exit "$rc" 0 "含空格 HOME 默认同步成功"
+assert_file "$H/.claude/skills/coinbase/SKILL.md" "默认 Claude 路径完整"
+assert_file "$H/.codex/skills/coinbase/SKILL.md" "默认 Codex 路径完整"
+H2="$TESTDIR/single home"
+mkdir -p "$H2/.codex"
+: > "$STUB_LOG"
+out=$(cd "$TESTDIR/work" && HOME="$H2" bash "$C" sync 2>&1); rc=$?
+assert_exit "$rc" 0 "仅存在 Codex 时同步成功"
+assert_file "$H2/.codex/skills/coinbase/SKILL.md" "保留已存在一侧"
+adds=$(grep -c '^skills add ' "$STUB_LOG")
+assert_eq "$adds" 1 "仅安装已存在一侧"
+
 finish
+

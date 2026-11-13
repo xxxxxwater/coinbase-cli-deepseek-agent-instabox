@@ -35,13 +35,19 @@ done
 cb_need coinbase
 
 # 默认两侧都看：claude 用 ~/.claude/skills，codex 用 ~/.codex/skills
-DIRS=""
+DIRS=()
 if [ -n "$EXTRA_DIR" ]; then
-  DIRS="$EXTRA_DIR"
+  DIRS=("$EXTRA_DIR")
 else
-  [ -d "${HOME}/.claude/skills" ] || [ -d "${HOME}/.claude" ] && DIRS="${DIRS} ${HOME}/.claude/skills"
-  [ -d "${HOME}/.codex/skills" ] || [ -d "${HOME}/.codex" ] && DIRS="${DIRS} ${HOME}/.codex/skills"
-  [ -z "${DIRS// /}" ] && DIRS="${HOME}/.claude/skills ${HOME}/.codex/skills"
+  if [ -d "${HOME}/.claude/skills" ] || [ -d "${HOME}/.claude" ]; then
+    DIRS+=("${HOME}/.claude/skills")
+  fi
+  if [ -d "${HOME}/.codex/skills" ] || [ -d "${HOME}/.codex" ]; then
+    DIRS+=("${HOME}/.codex/skills")
+  fi
+  if [ "${#DIRS[@]}" -eq 0 ]; then
+    DIRS=("${HOME}/.claude/skills" "${HOME}/.codex/skills")
+  fi
 fi
 
 # 包里的权威列表：`coinbase skills list` 会打印名字、是否已安装、描述。
@@ -66,7 +72,7 @@ fi
 WANT=$(printf '%s\n' "$NAMES" | wc -l | tr -d ' ')
 
 if [ "$CMD" = "sync" ]; then
-  for d in $DIRS; do
+  for d in "${DIRS[@]}"; do
     mkdir -p "$d"
     out=$(cb_timeout 120 coinbase skills add --dir "$d" 2>&1)
     printf '%s\n' "$out" | tail -2
@@ -79,7 +85,7 @@ missing_total=0
 cb_hr
 printf '包内共 %s 个 skill\n' "$WANT"
 cb_hr
-for d in $DIRS; do
+for d in "${DIRS[@]}"; do
   printf '%s:\n' "$d"
   miss=0
   for n in $NAMES; do
@@ -103,3 +109,4 @@ if [ "$CMD" = "verify" ] && [ "$missing_total" -gt 0 ]; then
   exit 1
 fi
 exit 0
+

@@ -54,7 +54,17 @@ for f in "$HERE"/scripts/*.sh; do
   [ -f "$f" ] || continue
   [ -f "$BIN_DIR/$(basename "$f")" ] && PLAN+=("$BIN_DIR/$(basename "$f")")
 done
-[ -d "$BIN_DIR/lib" ] && PLAN+=("$BIN_DIR/lib")
+# bin/lib is shared: only unchanged, regular bundled library files qualify.
+# Keep changed files and symlinks for manual inspection rather than guessing ownership.
+if [ -d "$BIN_DIR/lib" ] && [ ! -L "$BIN_DIR/lib" ]; then
+  for f in "$HERE"/scripts/lib/*.sh; do
+    [ -f "$f" ] || continue
+    target="$BIN_DIR/lib/$(basename "$f")"
+    if [ -f "$target" ] && [ ! -L "$target" ] && cmp -s "$f" "$target"; then
+      PLAN+=("$target")
+    fi
+  done
+fi
 if [ "$WITH_GUARD" -eq 1 ]; then
   PLAN+=("${GUARD_DIR}/coinbase（换成真程序）" "${GUARD_DIR}/coinbase-mcp-proxy.mjs" "$HOME/bin/coinbase-guard")
 fi
@@ -85,9 +95,13 @@ for x in ${PLAN[@]+"${PLAN[@]}"}; do
     "${BIN_DIR}/"*.sh) rm -f "$x"; say "  已删 $(basename "$x")" ;;
   esac
 done
-if [ -d "$BIN_DIR/lib" ]; then
-  rm -rf "${BIN_DIR:?}/lib"
-  say "  已删 lib/"
+# Never recursively remove shared contents; remove the directory only when empty.
+if [ -d "$BIN_DIR/lib" ] && [ ! -L "$BIN_DIR/lib" ]; then
+  if rmdir "$BIN_DIR/lib" 2>/dev/null; then
+    say "  已删空 lib/"
+  else
+    say "  保留 lib/ 中的其他或已修改文件"
+  fi
 fi
 
 # ---------- 恢复真 coinbase ----------
@@ -147,3 +161,4 @@ say "  剩下的自己决定："
 say "    - ${CONF_DIR}（配置/账本，用 --purge 才会删）"
 say "    - CDP 私钥文件（仓库从不碰它）"
 exit 0
+

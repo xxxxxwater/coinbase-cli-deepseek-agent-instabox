@@ -58,4 +58,41 @@ n_arch=$(find "$CONF" -name 'journal.jsonl.*.archived' | wc -l | tr -d ' ')
 assert_eq "$n_arch" "1" "--purge：账本归档而不是直接删（审计不丢）"
 assert_contains "$out" "私钥" "--purge：明确说了不碰私钥文件"
 
+# Shared lib must not be recursively removed, with or without an installation.
+for installed in yes no; do
+  SHARED="$TESTDIR/shared $installed"
+  mkdir -p "$SHARED/bin/lib/other-tool"
+  printf 'unrelated library\n' > "$SHARED/bin/lib/other.sh"
+  printf 'nested data\n' > "$SHARED/bin/lib/other-tool/data"
+  if [ "$installed" = yes ]; then
+    bash "$ROOT/install.sh" --prefix "$SHARED" --skip-cli --yes >/dev/null 2>&1
+  fi
+  out=$(bash "$U" --prefix "$SHARED" --yes 2>&1); rc=$?
+  assert_exit "$rc" 0 "shared lib ($installed): uninstall succeeds"
+  assert_eq "$(cat "$SHARED/bin/lib/other.sh" 2>/dev/null)" "unrelated library" "shared lib ($installed): unrelated file preserved"
+  assert_eq "$(cat "$SHARED/bin/lib/other-tool/data" 2>/dev/null)" "nested data" "shared lib ($installed): nested data preserved"
+  if [ -e "$SHARED/bin/lib/risk.sh" ]; then bad "shared lib: project library removed"; else ok "shared lib: project library removed"; fi
+done
+
+# Changed same-name files and symlinks cannot establish project ownership.
+SHARED="$TESTDIR/changed"
+mkdir -p "$SHARED/bin/lib"
+printf 'another config\n' > "$SHARED/bin/lib/config.sh"
+ln -s "$ROOT/scripts/lib/risk.sh" "$SHARED/bin/lib/risk.sh"
+out=$(bash "$U" --prefix "$SHARED" --yes 2>&1); rc=$?
+assert_exit "$rc" 0 "changed libraries: uninstall succeeds"
+assert_eq "$(cat "$SHARED/bin/lib/config.sh" 2>/dev/null)" "another config" "changed same-name library preserved"
+if [ -L "$SHARED/bin/lib/risk.sh" ]; then ok "library symlink preserved"; else bad "library symlink preserved"; fi
+
+# A symlinked lib directory must not be traversed.
+LINKED="$TESTDIR/linked"
+mkdir -p "$LINKED/bin" "$TESTDIR/external"
+cp "$ROOT/scripts/lib/config.sh" "$TESTDIR/external/config.sh"
+ln -s "$TESTDIR/external" "$LINKED/bin/lib"
+out=$(bash "$U" --prefix "$LINKED" --yes 2>&1); rc=$?
+assert_exit "$rc" 0 "symlink directory: uninstall succeeds"
+assert_file "$TESTDIR/external/config.sh" "symlink directory: target file preserved"
+if [ -L "$LINKED/bin/lib" ]; then ok "symlink directory preserved"; else bad "symlink directory preserved"; fi
+
 finish
+

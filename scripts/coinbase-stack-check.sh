@@ -56,8 +56,8 @@ if ! grep -q 'dns-result-order=ipv4first' /etc/environment 2>/dev/null; then
     && say "已补写 /etc/environment 的 NODE_OPTIONS"
 fi
 sudo -n sh -c "test -f /etc/profile.d/99-node-ipv4.sh || printf 'export NODE_OPTIONS=\"%s\"\n' '$NODE_OPT' > /etc/profile.d/99-node-ipv4.sh" >/dev/null 2>&1
-nopt=$(grep -c 'dns-result-order=ipv4first' /etc/environment 2>/dev/null || echo 0)
-if [ "$nopt" -ge 1 ]; then check 0 node_options; else check 1 node_options; fi
+nopt=$(grep -c 'dns-result-order=ipv4first' /etc/environment 2>/dev/null || true)
+if [ "${nopt:-0}" -ge 1 ]; then check 0 node_options; else check 1 node_options; fi
 
 # ---------- 2. coinbase 二进制 ----------
 if [ ! -e /usr/local/bin/coinbase ] && [ ! -e /usr/local/bin/coinbase-real.js ]; then
@@ -137,8 +137,10 @@ else
 fi
 
 # ---------- 6. MCP 注册 ----------
-m_c=$(grep -c '"coinbase"' "$HOME_DIR/.claude.json" 2>/dev/null || echo 0)
-m_x=$(grep -c '^\[mcp_servers.coinbase\]' "$HOME_DIR/.codex/config.toml" 2>/dev/null || echo 0)
+m_c=$(grep -c '"coinbase"' "$HOME_DIR/.claude.json" 2>/dev/null || true)
+m_x=$(grep -c '^\[mcp_servers.coinbase\]' "$HOME_DIR/.codex/config.toml" 2>/dev/null || true)
+m_c=${m_c:-0}
+m_x=${m_x:-0}
 if [ "$m_c" -ge 1 ] && [ "$m_x" -ge 1 ]; then
   check 0 mcp
 else
@@ -177,16 +179,23 @@ fi
 [ $ran_bal -eq 1 ] && check $bal_rc balance
 
 # ---------- 状态文件 ----------
-{
-  printf '{"at":"%s","version":"%s","env":"%s","checks":[' "$(date -Is)" "$ver" "$envname"
-  first=1
-  for r in "${res[@]}"; do
-    [ $first -eq 1 ] || printf ','
-    printf '"%s"' "$r"; first=0
-  done
-  printf '],"ok":%s}\n' "$([ $fail -eq 0 ] && echo true || echo false)"
-} > "$STATUS"
+# Pass strings as arguments to a real encoder; never interpolate them into JSON.
+if ! python3 - "$(date -Is)" "$ver" "$envname" "$fail" "${res[@]}" > "$STATUS" <<'PYJSON'
+import json
+import sys
+
+at, version, env, failed, *checks = sys.argv[1:]
+json.dump({"at": at, "version": version, "env": env, "checks": checks,
+           "ok": failed == "0"}, sys.stdout, ensure_ascii=True)
+sys.stdout.write("\n")
+PYJSON
+then
+  # A failed status write/encoder must not be reported as success.
+  say "状态文件写入失败"
+  fail=1
+fi
 
 say "结果: ${res[*]}"
 say "===== boot self-check end (ok=$([ $fail -eq 0 ] && echo yes || echo no)) ====="
 exit $fail
+

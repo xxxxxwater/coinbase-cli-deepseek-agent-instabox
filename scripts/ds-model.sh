@@ -100,6 +100,65 @@ envf   = os.environ["DS_ENV"]
 def mode600(p):
     os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
 
+# ---- Codex: parse and validate before any configuration writes
+# Python 3.11+ provides tomllib; fail closed if unavailable or input is invalid.
+import datetime
+import tempfile
+import tomllib
+
+def toml_value(value):
+    # Inline tables preserve arbitrary nested tables/arrays without scope changes.
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{ " + ", ".join(json.dumps(k, ensure_ascii=False) + " = " + toml_value(v)
+                                for k, v in value.items()) + " }"
+    raise TypeError("unsupported TOML value")
+
+def prepare_codex(path, model, base):
+    config = {}
+    if os.path.exists(path):
+        with open(path, "rb") as source:
+            config = tomllib.load(source)
+    providers = config.setdefault("model_providers", {})
+    if not isinstance(providers, dict):
+        raise ValueError("model_providers must be a table")
+    provider = providers.setdefault("deepseek", {})
+    if not isinstance(provider, dict):
+        raise ValueError("model_providers.deepseek must be a table")
+    config.update(model=model, model_provider="deepseek")
+    provider.update(name="DeepSeek", base_url=base + "/v1",
+                    env_key="DEEPSEEK_API_KEY", wire_api="responses")
+    candidate = "\n".join(json.dumps(k, ensure_ascii=False) + " = " + toml_value(v)
+                          for k, v in config.items()) + "\n"
+    tomllib.loads(candidate)  # Never replace a configuration with invalid TOML.
+    return candidate
+
+def replace_codex(path, candidate):
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".codex-config-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write(candidate)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+codex_candidate = prepare_codex(codex, model, base)
+# ---- End Codex preparation
+
 # ---- Claude Code: settings.json env block
 d = {}
 if os.path.exists(claude):
@@ -118,37 +177,7 @@ json.dump(d, open(claude, "w"), indent=2)
 mode600(claude)
 print("   claude  ->", claude, "(env: ANTHROPIC_BASE_URL/%s, ANTHROPIC_MODEL=%s)" % (base + "/anthropic", model))
 
-# ---- Codex: top-level model + provider table, existing mcp_servers preserved
-BEGIN = "# >>> deepseek-model (managed by ds-model.sh)"
-END   = "# <<< deepseek-model"
-existing = ""
-if os.path.exists(codex):
-    existing = open(codex).read()
-kept, skip = [], False
-for line in existing.splitlines():
-    if line.strip() == BEGIN:
-        skip = True
-        continue
-    if line.strip() == END:
-        skip = False
-        continue
-    if not skip:
-        kept.append(line)
-block = [
-    BEGIN,
-    'model = "%s"' % model,
-    'model_provider = "deepseek"',
-    "",
-    "[model_providers.deepseek]",
-    'name = "DeepSeek"',
-    'base_url = "%s/v1"' % base,
-    'env_key = "DEEPSEEK_API_KEY"',
-    'wire_api = "responses"',
-    END,
-    "",
-]
-os.makedirs(os.path.dirname(codex), exist_ok=True)
-open(codex, "w").write("\n".join(block + kept) + "\n")
+replace_codex(codex, codex_candidate)
 print("   codex   ->", codex, "(model_providers.deepseek, wire_api=responses)")
 
 # ---- env file so codex's env_key resolves in any shell

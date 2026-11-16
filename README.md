@@ -280,3 +280,13 @@ systemctl status tg-agent        # active (running)
 ## 许可
 
 MIT
+
+### Model-switch configuration safety
+
+`ds-model.sh` requires Python 3.11+ (`tomllib`). It validates the existing Codex
+TOML before writing any configuration and atomically replaces the Codex file
+with a validated candidate. Existing root options, other providers, MCP settings,
+and custom DeepSeek fields are preserved. TOML comments and formatting are not
+preserved: nested tables are serialized as inline tables. Invalid input aborts
+without overwriting the existing configuration; repair invalid TOML first.
+This does not make the other configuration writes in the script transactional.

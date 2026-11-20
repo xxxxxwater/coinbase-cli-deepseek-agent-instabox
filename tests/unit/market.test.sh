@@ -99,6 +99,44 @@ EMPTY="$TESTDIR/empty"; mkdir -p "$EMPTY"
 out=$(CB_MARKET_FIXTURE_DIR="$EMPTY" bash "$M" 2>&1); rc=$?
 assert_exit "$rc" 6 "全拿不到退出 6"
 assert_contains "$out" "所有数据源都拿不到" "要说清是全部失败"
+out=$(CB_MARKET_FIXTURE_DIR="$EMPTY" bash "$M" --json 2>/dev/null); rc=$?
+assert_exit "$rc" 6 "全拿不到时 JSON 模式也退出 6"
+if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if not d["ok"] and d["missing"]==["fng","cap","stable","funding","fees"] and all(not r["ok"] for r in d["rows"]) else 1)' 2>/dev/null; then
+  ok "全部来源失败时 JSON 仍包含各段的失败状态"
+else
+  bad "全部来源失败时 JSON 缺失或结构不对" "$out"
+fi
+
+echo "== HTTP 错误正文 =="
+cat > "$STUB_DIR/curl" <<'SH'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out=$2; shift ;;
+    https://mempool.space/*) code=503 ;;
+    https://api.alternative.me/*) code=200 ;;
+  esac
+  shift
+done
+if [ "$code" = 503 ]; then
+  printf '{"fastestFee":1}\n' > "$out"
+else
+  cp "$CB_MARKET_TEST_FNG" "$out"
+fi
+printf '%s' "$code"
+if [ "${CB_MARKET_TEST_TIMEOUT:-0}" = 1 ]; then
+  exit 28
+fi
+SH
+chmod +x "$STUB_DIR/curl"
+out=$(CB_MARKET_FIXTURE_DIR="" CB_MARKET_TEST_FNG="$FIX/fng.json" bash "$M" --no-cache --only fees,fng --strict 2>&1); rc=$?
+assert_exit "$rc" 1 "HTTP 503 的正文即使有预期字段，--strict 也退出 1"
+assert_contains "$out" "不可用：HTTP 503" "HTTP 错误正文不能当成有效行情"
+assert_contains "$out" "30（Fear）" "单源 HTTP 失败不影响其他有效行情"
+out=$(CB_MARKET_FIXTURE_DIR="" CB_MARKET_TEST_FNG="$FIX/fng.json" CB_MARKET_TEST_TIMEOUT=1 \
+  bash "$M" --no-cache --only fng --json 2>/dev/null); rc=$?
+assert_exit "$rc" 6 "curl 收到 HTTP 200 后超时仍算失败"
+assert_contains "$out" "超时或被拒" "传输失败与正常响应的解析失败分开报告"
 
 echo "== 坏 JSON =="
 BAD="$TESTDIR/bad"; mkdir -p "$BAD"; cp "$FIX"/*.json "$BAD/"

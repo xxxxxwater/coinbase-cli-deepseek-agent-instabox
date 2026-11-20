@@ -7,6 +7,9 @@ B="$ROOT/scripts/cb-brief.sh"
 export NO_COLOR=1
 export XDG_CACHE_HOME="$TESTDIR/cache"
 export COINBASE_PORTFOLIO_ID="11111111-1111-1111-1111-111111111111"
+export CB_MARKET_FIXTURE_DIR="$TESTDIR/market"
+mkdir -p "$CB_MARKET_FIXTURE_DIR"
+printf '{"fastestFee":1}\n' > "$CB_MARKET_FIXTURE_DIR/mempool.json"
 
 FIX="$TESTDIR/feeds"; mkdir -p "$FIX"
 python3 - "$FIX" <<'PY'
@@ -29,6 +32,7 @@ assert_exit "$rc" 0 "正常运行时退出码 0"
 assert_contains "$out" "态势简报" "有标题"
 assert_contains "$out" "=== 风控 ===" "有风控段"
 assert_contains "$out" "=== 余额 ===" "有余额段"
+assert_contains "$out" "余额均为 0" "有有效账户时如实显示零余额"
 assert_contains "$out" "=== 走势 ===" "有走势段"
 assert_contains "$out" "=== 事件 ===" "有事件段"
 first=$(printf '%s\n' "$out" | grep -n '=== ' | head -1 | cut -d: -f1)
@@ -65,6 +69,11 @@ out=$(run --candles 0 --news 2)
 assert_contains "$out" "（跳过）" "--candles 0：走势段跳过"
 
 # ---------- 板块失败必须说出来 ----------
+out=$(STUB_DENY="$COINBASE_PORTFOLIO_ID" run --no-market --news 0 --candles 0); rc=$?
+assert_exit "$rc" 1 "余额接口返回错误 JSON 时，简报退出码 1"
+assert_contains "$out" "（不可用：coinbase balance 返回无效账户数据）" "余额段明确报告接口数据不可用"
+assert_not_contains "$out" "余额均为 0" "组合不可访问时不能显示零余额"
+
 BAD="$TESTDIR/bad"; mkdir -p "$BAD"
 printf 'not xml at all <<<' > "$BAD/sec_press.xml"
 out=$(CB_NEWS_FIXTURE_DIR="$BAD" bash "$B" --news 2 --candles 0 2>&1); rc=$?

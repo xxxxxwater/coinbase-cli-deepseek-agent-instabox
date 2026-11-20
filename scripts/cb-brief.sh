@@ -94,29 +94,38 @@ section "余额"
 if command -v coinbase >/dev/null 2>&1; then
   PFX=$(cb_portfolio_id 2>/dev/null) || PFX=""
   if [ -n "$PFX" ]; then
-    out=$(cb_timeout 45 coinbase balance "portfolio_id==$PFX" show_zero==true 2>&1)
+    out=$(cb_timeout 45 coinbase balance "portfolio_id==$PFX" show_zero==true 2>/dev/null)
   else
-    out=$(cb_timeout 45 coinbase balance 2>&1)
+    out=$(cb_timeout 45 coinbase balance 2>/dev/null)
   fi
   rc=$?
-  if [ "$rc" -eq 0 ]; then
-    python3 -c '
-import json,sys
+  if [ "$rc" -ne 0 ]; then
+    unavailable "coinbase balance 退出码 $rc"
+  elif balance=$(python3 -c '
+import json, sys
+
 try:
     d=json.load(sys.stdin)
-except Exception:
+except ValueError:
     sys.exit(1)
-rows=[]
-for acc in d.get("accounts",[]):
-    hold=acc.get("available_balance") or {}
-    v=hold.get("value")
-    cur=hold.get("currency") or acc.get("currency") or "?"
-    if v in (None,"","0","0.00","0.00000000"): continue
+if not isinstance(d, dict) or "errorType" in d or not isinstance(d.get("accounts"), list):
+    sys.exit(1)
+
+rows = []
+for acc in d["accounts"]:
+    hold = acc.get("available_balance") if isinstance(acc, dict) else None
+    if not isinstance(hold, dict) or hold.get("value") in (None, ""):
+        sys.exit(1)
+    v = hold["value"]
+    cur = hold.get("currency") or acc.get("currency") or "?"
+    if v in ("0", "0.00", "0.00000000"):
+        continue
     rows.append("%s %s" % (v, cur))
 print(" · ".join(rows) if rows else "余额均为 0")
-' <<< "$out" || printf '%s\n' "$out"
+' <<< "$out"); then
+    printf '%s\n' "$balance"
   else
-    unavailable "coinbase balance 退出码 ${rc:-?}"
+    unavailable "coinbase balance 返回无效账户数据"
   fi
 else
   unavailable "找不到 coinbase 或 cb-doctor.sh"

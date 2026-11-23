@@ -133,7 +133,9 @@ fi
 
 # 4. 走势
 section "走势"
-if [ -x "$HERE/cb-candles.sh" ] && [ "$CANDLES_N" -gt 0 ]; then
+if [ "$CANDLES_N" -eq 0 ]; then
+  printf '（跳过）\n'
+elif [ -x "$HERE/cb-candles.sh" ]; then
   out=$(cb_timeout 45 bash "$HERE/cb-candles.sh" "$PRODUCT" --limit "$CANDLES_N" 2>&1)
   rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -142,29 +144,31 @@ if [ -x "$HERE/cb-candles.sh" ] && [ "$CANDLES_N" -gt 0 ]; then
     unavailable "cb-candles.sh 退出码 ${rc:-?}"
   fi
 else
-  printf '（跳过）\n'
+  unavailable "找不到 cb-candles.sh"
 fi
 
-# 5. 事件：只留 P0/P1，P2/P3 交给完整的 cb-news.sh
+# 5. 事件：条数由 cb-news.sh 限制
 section "事件"
-if [ -x "$HERE/cb-news.sh" ] && [ "$NEWS_N" -gt 0 ]; then
+if [ "$NEWS_N" -eq 0 ]; then
+  printf '（跳过）\n'
+elif [ -x "$HERE/cb-news.sh" ]; then
   out=$(CB_NEWS_FIXTURE_DIR="${CB_NEWS_FIXTURE_DIR:-}" cb_timeout 90 bash "$HERE/cb-news.sh" \
         --since "$SINCE" --limit "$NEWS_N" 2>&1)
   rc=$?
   if [ "$rc" -eq 0 ]; then
-    # 只留"标题 + 主题概览 + 前 N 条"；分隔线与通用提示在这个版面里是噪音
+    # 简报已有自己的通用提示，保留事件及来源诊断。
     printf '%s\n' "$out" | awk '
       /^-+$/ { next }
       /^提示：/ { next }
       { print }
-    ' | head -n $((NEWS_N + 3))
+    '
   elif [ "$rc" -eq 6 ]; then
     unavailable "所有新闻源都失败了"
   else
     unavailable "cb-news.sh 退出码 ${rc:-?}"
   fi
 else
-  printf '（跳过）\n'
+  unavailable "找不到 cb-news.sh"
 fi
 
 printf '\n'

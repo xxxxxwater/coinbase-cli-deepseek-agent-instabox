@@ -33,7 +33,6 @@ SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CB_MARKET_TTL=${CB_MARKET_TTL:-120}
 UA="cb-market/1.0 (+coinbase-cli-deepseek-agent-instabox)"
 
-say() { printf '%s\n' "$*" >&2; }
 die() { printf '错误: %s\n' "$*" >&2; exit 2; }
 
 usage() {
@@ -93,9 +92,9 @@ fetch() {
     if [ "$method" = "POST" ]; then
         code=$(curl -sS --max-time 12 -A "$UA" -X POST \
                     -H 'Content-Type: application/json' -d "$body" \
-                    -o "$out" -w '%{http_code}' "$url" 2>/dev/null)
+                    -o "$out" -w '%{http_code}' "$url" 2>/dev/null) || code=000
     else
-        code=$(curl -sS --max-time 12 -A "$UA" -o "$out" -w '%{http_code}' "$url" 2>/dev/null)
+        code=$(curl -sS --max-time 12 -A "$UA" -o "$out" -w '%{http_code}' "$url" 2>/dev/null) || code=000
     fi
     [ -n "$code" ] || code=000
 
@@ -110,10 +109,14 @@ fetch() {
 RENDER=$(cat <<'PY'
 import json, os, sys, datetime
 
-tmp, want, as_json, strict = sys.argv[1], sys.argv[2].split(","), sys.argv[3] == "1", sys.argv[4] == "1"
-want = [w for w in want if w]
+tmp, sections, json_arg, strict_arg, response_arg = sys.argv[1:]
+want = sections.split(",")
+as_json = json_arg == "1"
+strict = strict_arg == "1"
 
 def load(key):
+    if status(key) != "200":
+        return None
     p = os.path.join(tmp, key + ".json")
     if not os.path.exists(p):
         return None
@@ -209,10 +212,14 @@ if "fees" in want:
     except Exception:
         add("fees", "链上", "（不可用：%s）" % why("mempool"), ok=False)
 
+all_failed = bool(rows) and response_arg == "0"
+if all_failed:
+    print("所有数据源都拿不到（网络或接口不可用）", file=sys.stderr)
+
 if as_json:
     out = {"rows": rows, "missing": gaps, "ok": not gaps}
     print(json.dumps(out, ensure_ascii=False))
-else:
+elif not all_failed:
     ts = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     print("市场状态（%s）" % ts)
 
@@ -226,22 +233,20 @@ else:
         print("")
         print("注意：%d 段拿不到（%s）。缺数据的时候，别把「没信号」当成「没问题」。" % (len(gaps), "、".join(gaps)))
 
-sys.exit(0 if (rows and (not gaps or not strict)) else (6 if not rows else 1))
+sys.exit(6 if all_failed or not rows else int(strict and bool(gaps)))
 PY
 )
 
-FETCHED=0
-FAILED=0
+HAS_RESPONSE=0
 
 take() {
     local key=$1 url=$2 method=${3:-GET} body=${4:-}
     local code
     code=$(fetch "$key" "$url" "$method" "$body")
     printf '%s' "$code" > "$TMPD/$key.code"
-    case "$code" in
-        200) FETCHED=$((FETCHED + 1)) ;;
-        *)   FAILED=$((FAILED + 1)) ;;
-    esac
+    if [ "$code" = "200" ]; then
+        HAS_RESPONSE=1
+    fi
 }
 
 want fng     && take fng "https://api.alternative.me/fng/?limit=2"
@@ -250,9 +255,4 @@ want stable  && take stablecoins "https://stablecoins.llama.fi/stablecoins?inclu
 want funding && take okx_funding "https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP"
 want fees    && take mempool "https://mempool.space/api/v1/fees/recommended"
 
-if [ "$FETCHED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
-    say "所有数据源都拿不到（网络或接口不可用）"
-    exit 6
-fi
-
-python3 -c "$RENDER" "$TMPD" "$WANT" "$JSON" "$STRICT"
+python3 -c "$RENDER" "$TMPD" "$WANT" "$JSON" "$STRICT" "$HAS_RESPONSE"

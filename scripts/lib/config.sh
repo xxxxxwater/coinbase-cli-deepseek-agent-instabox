@@ -163,12 +163,15 @@ cb_cfg_set() {
   python3 - "$f" "$1" "$2" <<'PYCFG'
 import json, os, sys, tempfile
 path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
-d = {}
-if os.path.exists(path):
-    try:
-        d = json.load(open(path))
-    except Exception:
-        d = {}
+try:
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+except FileNotFoundError:
+    d = {}
+except (OSError, ValueError) as exc:
+    sys.exit("无法读取现有配置 %s：%s" % (path, exc))
+if not isinstance(d, dict):
+    sys.exit("配置 %s 必须是 JSON 对象" % path)
 d[key] = val
 fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
 with os.fdopen(fd, "w") as f:

@@ -300,12 +300,14 @@ sys.exit(0 if float('$spent') + float('$notional') > float('$max_daily') else 1)
 # 把账本汇总成人能看的样子。审计的用处不是"有日志"，而是"能回答这一周发生了什么"。
 cb_risk_report() {
   python3 - "$(cb_risk_journal)" "$@" <<'PYREPORT'
-import json, re, sys, time
+import json, re, sys
+from datetime import date
 from collections import Counter, defaultdict
 
 path = sys.argv[1]
 args = sys.argv[2:]
-days = None
+today = date.today()
+cutoff = None
 as_json = False
 i = 0
 while i < len(args):
@@ -314,7 +316,16 @@ while i < len(args):
         as_json = True
         i += 1
     elif a == "--days" and i + 1 < len(args):
-        days = int(args[i + 1])
+        value = args[i + 1]
+        if not re.fullmatch(r"[0-9]+", value):
+            print("错误: --days 需要非负整数", file=sys.stderr)
+            sys.exit(2)
+        try:
+            first_day = max(1, today.toordinal() - int(value))
+        except ValueError:
+            print("错误: --days 数值过大", file=sys.stderr)
+            sys.exit(2)
+        cutoff = date.fromordinal(first_day).isoformat()
         i += 2
     else:
         print("错误: report 不认识的参数 %s" % a, file=sys.stderr)
@@ -334,9 +345,9 @@ try:
 except FileNotFoundError:
     rows = []
 
-if days:
-    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
-    rows = [r for r in rows if (r.get("day") or "") >= cutoff]
+if cutoff is not None:
+    end = today.isoformat()
+    rows = [r for r in rows if cutoff <= (r.get("day") or "") <= end]
 
 by_result = defaultdict(lambda: [0, 0.0])   # key -> [笔数, 金额]
 reasons = Counter()

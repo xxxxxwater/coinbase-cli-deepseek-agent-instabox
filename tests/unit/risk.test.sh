@@ -173,8 +173,34 @@ if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys
 else
   bad "report --json：JSON 内容不对" "$(printf '%.200s' "$out")"
 fi
-out=$(CB_CONFIG="$RCFG" bash "$R" report --days 0 2>&1); rc=$?
-assert_exit "$rc" 0 "report --days 0：退出码 0（只看今天也不炸）"
+# 使用本地日历生成测试日期，与账本的 day 字段一致。
+python3 - "$RT/journal.jsonl" <<'PYDAYS'
+from datetime import date, timedelta
+import json, sys
+today = date.today()
+with open(sys.argv[1], "w") as journal:
+    for age in (-1, 0, 1, 2):
+        print(json.dumps({"day": (today - timedelta(days=age)).isoformat()}), file=journal)
+PYDAYS
+for days in 0 1; do
+  total=$(CB_CONFIG="$RCFG" bash "$R" report --days "$days" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')
+  assert_eq "$total" "$((days+1))" "--days $days：包含起始日及今天"
+done
+# 给缺值用例加超时，避免参数解析回归时把测试套件也挂住。
+python3 - "$R" <<'PYTIMEOUT'
+import subprocess, sys
+try:
+    rc = subprocess.run(["bash", sys.argv[1], "report", "--days"], timeout=5,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+except subprocess.TimeoutExpired:
+    rc = 124
+sys.exit(rc)
+PYTIMEOUT
+assert_exit "$?" 2 "report --days 缺值：及时返回用法错误"
+for invalid in abc -1 1.5 --json; do
+  CB_CONFIG="$RCFG" bash "$R" report --days "$invalid" >/dev/null 2>&1
+  assert_exit "$?" 2 "report --days $invalid：返回用法错误"
+done
 out=$(CB_CONFIG="$RCFG" bash "$R" report --bogus 2>&1); rc=$?
 assert_exit "$rc" 2 "report：未知参数退出码 2"
 unset RCFG

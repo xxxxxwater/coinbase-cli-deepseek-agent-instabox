@@ -15,6 +15,7 @@
 #   cb-risk.sh resume              # 解除 kill switch
 #   cb-risk.sh reset               # 归档当日账本（限额计数从 0 开始，记录不丢）
 #   cb-risk.sh verify          # 校验账本哈希链（被改过能看出来）
+#   cb-risk.sh report [--days N] [--json] # 从 N 天前至今天（0 = 只看今天）
 #   cb-risk.sh journal [N]         # 看最近 N 条（默认 20）
 #   cb-risk.sh path                # 打印账本路径
 #
@@ -36,7 +37,9 @@ while [ $# -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     -*) case "$1" in
           --json) ARGS+=("$1"); shift ;;
-          --days) ARGS+=("$1" "${2:-}"); shift 2 ;;
+          --days)
+            [ $# -ge 2 ] || { printf '错误: --days 需要非负整数\n' >&2; exit 2; }
+            ARGS+=("$1" "$2"); shift 2 ;;
           *) printf '错误: 未知参数 %s（--help 看用法）\n' "$1" >&2; exit 2 ;;
         esac ;;
     *) ARGS+=("$1"); shift ;;
@@ -118,7 +121,7 @@ for line in sys.stdin:
     ;;
 
   report)
-    cb_risk_report "${ARGS[@]+"${ARGS[@]}"}"
+    cb_risk_report "${ARGS[@]+"${ARGS[@]}"}" || exit $?
     ;;
 
   verify)

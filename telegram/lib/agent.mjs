@@ -52,6 +52,7 @@ export function buildAgentEnv({ model, deepseekKey, baseEnv = {}, home }) {
 export function initAcc() {
   return {
     text: "",
+    codexMessageId: null,
     thinkChars: 0,
     sessionId: null,
     finalResult: null,
@@ -102,15 +103,17 @@ export function applyEvent(state, ev) {
     }
   }
 
-  // codex 的增量：它给的是整段快照而不是 delta，所以只在变长时替换，
-  // 否则会把已经显示的内容缩短。
+  // Codex 在一轮内可以先发进度再发答案。只在同一条消息更新时防止快照回退。
   if (ev.type === "item.completed" || ev.type === "item.updated") {
     const it = ev.item || {};
     if (it.type === "agent_message" || it.type === "assistant_message") {
       const t = it.text || it.content || "";
-      if (t && t.length >= st.text.length) {
+      const id = it.id ?? null;
+      const newMessage = id !== st.codexMessageId;
+      if (typeof t === "string" && t && (ev.type === "item.completed" || newMessage || t.length >= st.text.length)) {
+        changed = t !== st.text;
         st.text = t;
-        changed = true;
+        st.codexMessageId = id;
       }
     }
   }

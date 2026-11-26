@@ -128,6 +128,21 @@ const t = (c, m, d) => { c ? ok(m) : bad(m, d); };
   t(r.state.usage.total_tokens === 9, "turn.completed 记下 usage");
 }
 
+// 同一轮的进度说明和最终答复是两个独立的 Codex item。
+{
+  const message = (type, id, text) => ({ type, item: { type: "agent_message", id, text } });
+  let st = applyEvent(initAcc(), message("item.completed", "progress", "正在核对所有结果")).state;
+  let r = applyEvent(st, message("item.updated", "answer", "已"));
+  t(r.changed && r.state.text === "已", "新 item 的短快照替换上一条进度");
+  st = applyEvent(r.state, message("item.updated", "answer", "已经完成")).state;
+  r = applyEvent(st, message("item.updated", "answer", "已"));
+  t(!r.changed && r.state.text === "已经完成", "同一 item 的旧短快照不回退");
+  st = applyEvent(r.state, message("item.completed", "answer", "完成")).state;
+  st = applyEvent(st, { type: "item.completed", item: { type: "command_execution" } }).state;
+  st = applyEvent(st, { type: "turn.completed", usage: { total_tokens: 12 } }).state;
+  t((st.finalResult || st.text) === "完成", "收尾时发送最后完成的正文，即使短于进度和中间快照");
+}
+
 // ---------- 7 纯函数：不改原状态 ----------
 {
   const st = initAcc();

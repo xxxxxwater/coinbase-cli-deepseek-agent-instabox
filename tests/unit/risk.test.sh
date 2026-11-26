@@ -184,7 +184,7 @@ with open(sys.argv[1], "w") as journal:
 PYDAYS
 for days in 0 1; do
   total=$(CB_CONFIG="$RCFG" bash "$R" report --days "$days" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')
-  assert_eq "$total" "$((days+1))" "--days $days：包含起始日及今天"
+  assert_eq "$total" "$((days+1))" "--days ${days}：包含起始日及今天"
 done
 # 给缺值用例加超时，避免参数解析回归时把测试套件也挂住。
 python3 - "$R" <<'PYTIMEOUT'
@@ -199,7 +199,7 @@ PYTIMEOUT
 assert_exit "$?" 2 "report --days 缺值：及时返回用法错误"
 for invalid in abc -1 1.5 --json; do
   CB_CONFIG="$RCFG" bash "$R" report --days "$invalid" >/dev/null 2>&1
-  assert_exit "$?" 2 "report --days $invalid：返回用法错误"
+  assert_exit "$?" 2 "report --days ${invalid}：返回用法错误"
 done
 out=$(CB_CONFIG="$RCFG" bash "$R" report --bogus 2>&1); rc=$?
 assert_exit "$rc" 2 "report：未知参数退出码 2"

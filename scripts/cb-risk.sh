@@ -73,8 +73,8 @@ case "$MODE" in
     ;;
 
   resume)
-    rm -f "$(cb_risk_killfile)"
-    cb_cfg_set kill_switch false >/dev/null 2>&1 || true
+    cb_cfg_set kill_switch false || cb_die "无法更新 kill_switch 配置，恢复失败" 3
+    rm -f "$(cb_risk_killfile)" || cb_die "无法移除 KILL 标记，恢复失败" 3
     cb_ok "kill switch 已解除"
     ;;
 

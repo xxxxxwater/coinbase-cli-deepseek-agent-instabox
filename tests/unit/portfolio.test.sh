@@ -44,6 +44,17 @@ out=$(bash "$PORT" --save --uuid "$C" 2>&1); rc=$?
 assert_exit "$rc" "0" "指定 --uuid 后成功"
 assert_eq "$(python3 -c "import json;print(json.load(open('$CB_CONFIG'))['portfolio_id'])")" "$C" "写入指定 UUID"
 
+echo "--save 保留现有限额，拒绝覆盖损坏的配置"
+printf '{"max_daily_usd":250}' > "$CB_CONFIG"
+bash "$PORT" --save --uuid "$C" >/dev/null 2>&1
+assert_eq "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["max_daily_usd"])' "$CB_CONFIG")" "250" "保存组合保留其他键"
+cp "$CB_CONFIG" "$TESTDIR/valid.json"
+printf '%s' '{"max_daily_usd":250,' > "$CB_CONFIG"
+out=$(bash "$PORT" --save --uuid "$C" 2>&1); rc=$?
+assert_exit "$rc" 3 "--save 配置损坏：退出码 3"
+assert_eq "$(cat "$CB_CONFIG")" '{"max_daily_usd":250,' "--save 保留损坏的文件原文"
+mv "$TESTDIR/valid.json" "$CB_CONFIG"
+
 echo "--show 打印配置路径"
 out=$(bash "$PORT" --show 2>&1)
 assert_contains "$out" "$CB_CONFIG" "显示配置路径"

@@ -89,4 +89,12 @@ assert_contains "$out" "cb-config.sh" "--help：打印用法"
 out=$(bash "$C" --bogus 2>&1); rc=$?
 assert_exit "$rc" 2 "未知参数：退出码 2"
 
+echo "已有配置损坏时保留原文件"
+for invalid in '{"max_daily_usd":250,' '[]'; do
+  printf '%s' "$invalid" > "$CFG"
+  out=$(bash "$C" set portfolio_id "$UUID" 2>&1); rc=$?
+  assert_exit "$rc" 3 "配置无效：写入失败"
+  assert_eq "$(cat "$CFG")" "$invalid" "配置无效：保留原文"
+done
+
 finish

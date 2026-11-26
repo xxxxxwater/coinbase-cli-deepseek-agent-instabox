@@ -44,6 +44,12 @@ bash "$R" kill >/dev/null 2>&1
 out=$(bash "$R" check BTC-USD BUY 10 2>&1); rc=$?
 assert_exit "$rc" 4 "kill 之后：任何单子都被拒"
 assert_contains "$out" "kill switch" "kill 之后：说明是 kill switch"
+cp "$CB_CONFIG" "$TESTDIR/valid.json"
+printf '%s' '{"max_single_trade_usd":100,' > "$CB_CONFIG"
+out=$(bash "$R" resume 2>&1); rc=$?
+assert_exit "$rc" 3 "resume 不能写配置时返回失败"
+assert_file "$TESTDIR/KILL" "resume 失败时保留 KILL"
+mv "$TESTDIR/valid.json" "$CB_CONFIG"
 bash "$R" resume >/dev/null 2>&1
 out=$(bash "$R" check BTC-USD BUY 10 2>&1); rc=$?
 assert_exit "$rc" 0 "resume 之后：恢复"

@@ -141,26 +141,8 @@ if [ "$SAVE" -eq 1 ]; then
     esac
   fi
 
-  mkdir -p "$(dirname "$CFG")"
-  chmod 700 "$(dirname "$CFG")" 2>/dev/null || true
-  python3 - "$CFG" "$target" <<'PY'
-import json, sys, os, tempfile
-path, target = sys.argv[1], sys.argv[2]
-d = {}
-if os.path.exists(path):
-    try:
-        d = json.load(open(path))
-    except Exception:
-        d = {}
-d["portfolio_id"] = target
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
-with os.fdopen(fd, "w") as f:
-    json.dump(d, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-os.chmod(tmp, 0o600)
-os.replace(tmp, path)
-print("已写入 %s  portfolio_id=%s" % (path, target))
-PY
+  cb_cfg_set portfolio_id "$target" || cb_die "写配置失败：$CFG" 3
+  printf '已写入 %s  portfolio_id=%s\n' "$CFG" "$target"
 fi
 
 [ "${#usable[@]}" -gt 0 ] || exit 2

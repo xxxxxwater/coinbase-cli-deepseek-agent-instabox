@@ -17,7 +17,7 @@
 #   cb-orders.sh --status FILLED     # PENDING/OPEN/FILLED/CANCELLED/EXPIRED/FAILED/QUEUED…
 #   cb-orders.sh --product BTC-USD   # 只看某个产品
 #   cb-orders.sh --limit 25 --all    # 每页 25 条并自动翻页
-#   cb-orders.sh --json              # 原样输出接口 JSON（给别的程序用）
+#   cb-orders.sh --json              # 输出接口 JSON；与 --all 连用时合并各页 orders
 #
 # 退出码: 0 成功 / 2 用法错 / 4 接口失败 / 5 返回内容不是 JSON
 
@@ -65,32 +65,50 @@ fi
 args+=("limit=${LIMIT}")
 [ "$ALL" -eq 1 ] && args+=(--paginate)
 
-out=$(coinbase "${args[@]}" 2>&1) || cb_die "查询订单失败：${out}"
-
-if [ "$AS_JSON" -eq 1 ]; then
-  printf '%s\n' "$out"
-  exit 0
-fi
+out=$(coinbase "${args[@]}") || cb_die "查询订单失败：${out}" 4
 
 # 注意：不能 "python3 - <<'PY'" 同时把数据从 stdin 喂进去 —— heredoc 占了 stdin，
 # python 读到的会是空的（这个坑我踩了：数据显示为空，但接口明明返回了 JSON）。
 RENDER=$(cat <<'PYORDERS'
 import json, sys
 
-status_filter = sys.argv[1] if len(sys.argv) > 1 else ""
+status_filter, paginate, as_json = sys.argv[1:]
 raw = sys.stdin.read()
-try:
-    data = json.loads(raw)
-except Exception:
-    print("返回内容不是 JSON，原样贴在下面：")
-    print(raw[:2000])
-    sys.exit(5)
-if not isinstance(data, dict) or "orders" not in data:
-    print("返回里没有 orders 字段，原样贴在下面：")
-    print(raw[:2000])
-    sys.exit(5)
+decoder = json.JSONDecoder()
+orders = []
+page_count = 0
+pos = 0
+while True:
+    while pos < len(raw) and raw[pos].isspace():
+        pos += 1
+    if pos == len(raw) and page_count:
+        break
+    try:
+        page, pos = decoder.raw_decode(raw, pos)
+    except ValueError:
+        print("返回内容不是 JSON", file=sys.stderr)
+        sys.exit(5)
+    if page_count and paginate != "1":
+        print("返回了多份 JSON，未指定 --all", file=sys.stderr)
+        sys.exit(5)
+    if isinstance(page, dict) and page.get("errorType"):
+        print("查询订单失败：" + str(page.get("errorMessage") or page["errorType"]), file=sys.stderr)
+        sys.exit(4)
+    if (not isinstance(page, dict) or not isinstance(page.get("orders"), list)
+            or not all(isinstance(o, dict) for o in page["orders"])):
+        print("返回的 orders 字段不是订单列表", file=sys.stderr)
+        sys.exit(5)
+    orders.extend(page["orders"])
+    page_count += 1
 
-orders = data.get("orders") or []
+if as_json == "1":
+    if page_count == 1:
+        sys.stdout.write(raw)
+    else:
+        page["orders"] = orders
+        print(json.dumps(page, ensure_ascii=False))
+    sys.exit(0)
+
 if not orders:
     what = "还挂着的订单" if status_filter == "OPEN" else "订单"
     print("没有%s。" % what)
@@ -121,9 +139,9 @@ for o in orders:
         short(o.get("order_id"), 18),
     ))
 
-if data.get("has_next"):
+if page.get("has_next"):
     print()
     print("还有下一页：加 --all 自动翻页，或自己跟 cursor（这个页的 cursor 在上面 JSON 里）。")
 PYORDERS
 )
-printf '%s' "$out" | python3 -c "$RENDER" "${STATUS}"
+printf '%s\n' "$out" | python3 -c "$RENDER" "$STATUS" "$ALL" "$AS_JSON"

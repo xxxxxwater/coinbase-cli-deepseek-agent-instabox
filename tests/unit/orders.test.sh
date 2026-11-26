@@ -36,6 +36,26 @@ STUB_ORDERS='{"orders":[{"order_id":"x","product_id":"BTC-USD","side":"BUY","sta
 out=$(STUB_ORDERS="$STUB_ORDERS" bash "$O" 2>&1)
 assert_contains "$out" "还有下一页" "has_next：提示 --all"
 
+# Coinbase CLI --paginate 每页分别打印一份 JSON，可以跨行。
+pages='{"orders": [
+  {"order_id":"page-one","product_id":"BTC-USD"}
+], "has_next":true, "cursor":"next"}
+{"orders":[{"order_id":"page-two","product_id":"ETH-USD"}],"has_next":false,"cursor":""}'
+out=$(STUB_ORDERS="$pages" bash "$O" --all); rc=$?
+assert_exit "$rc" 0 "--all：两页能渲染"
+assert_contains "$out" "page-one" "--all：保留第一页"
+assert_contains "$out" "page-two" "--all：保留第二页"
+assert_not_contains "$out" "还有下一页" "--all：已到末页"
+ids=$(STUB_ORDERS="$pages" bash "$O" --all --json | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+print([o["order_id"] for o in data["orders"]], data["has_next"], data["cursor"])')
+assert_eq "$ids" "['page-one', 'page-two'] False " "--all --json：单个 JSON 文档，保留顺序与末页游标"
+out=$(STUB_ORDERS="$pages
+{broken" bash "$O" --all --json 2>"$TESTDIR/err"); rc=$?
+assert_exit "$rc" 5 "--all --json：迟到的坏页使整次读取失败"
+assert_eq "$out" "" "--all --json：失败时不输出残缺的订单"
+
 # ---------- 过滤参数真的传下去了 ----------
 : > "$STUB_LOG"
 bash "$O" --open --product BTC-USD --limit 5 >/dev/null 2>&1
@@ -63,5 +83,10 @@ STUB_ORDERS='not json at all'
 out=$(STUB_ORDERS="$STUB_ORDERS" bash "$O" 2>&1); rc=$?
 assert_exit "$rc" 5 "返回不是 JSON：退出码 5（不是当成空列表）"
 assert_contains "$out" "不是 JSON" "返回不是 JSON：说清楚"
+
+out=$(STUB_ORDERS='{"errorType":"denied","errorMessage":"account unavailable"}' bash "$O" --json 2>"$TESTDIR/err"); rc=$?
+assert_exit "$rc" 4 "--json：API 错误返回接口失败"
+assert_eq "$out" "" "--json：错误不混入标准输出"
+assert_contains "$(cat "$TESTDIR/err")" "account unavailable" "--json：保留错误原因"
 
 finish

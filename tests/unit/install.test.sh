@@ -68,6 +68,47 @@ out=$(bash "$I" --prefix "$PREFIX" --skip-cli --yes 2>&1)
 k=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["key_file"])' "$CFG" 2>/dev/null)
 assert_eq "$k" "$KEYF" "幂等：不带参数重装不覆盖已有 key_file"
 
+# ---------- --systemd：只捕获生成的 unit，不写 /etc、不启动服务 ----------
+cat > "$STUB_DIR/sudo" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  install) cp "$4" "$CAPTURED_UNIT" ;;
+  systemctl) printf '%s\n' "$*" >> "$SYSTEMCTL_LOG" ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$STUB_DIR/sudo"
+printf '#!/bin/sh\nexit 0\n' > "$STUB_DIR/systemctl"; chmod +x "$STUB_DIR/systemctl"
+export CAPTURED_UNIT="$TESTDIR/captured.service" SYSTEMCTL_LOG="$TESTDIR/systemctl.log"
+unit_prefix="$TESTDIR/"'data & 100% $tools'
+out=$(bash "$I" --prefix "$unit_prefix" --skip-cli --systemd --yes 2>&1); rc=$?
+assert_exit "$rc" 0 "--systemd：安装到带空格和特殊字符的目录"
+assert_contains "$(cat "$SYSTEMCTL_LOG")" "enable --now coinbase-stack.service" "--systemd：使用生成的单元"
+python3 - "$CAPTURED_UNIT" "$unit_prefix/bin" "$HOME" <<'PYUNIT'
+from pathlib import Path
+import os, pwd, shlex, sys
+unit, bindir, home = sys.argv[1:]
+settings = dict(l.split("=", 1) for l in Path(unit).read_text().splitlines() if "=" in l)
+cmd = [arg.replace("%%", "%").replace("$$", "$") for arg in shlex.split(settings["ExecStart"])]
+assert cmd == ["/bin/bash", str(Path(bindir) / "coinbase-stack-check.sh")], cmd
+assert Path(cmd[1]).is_file()
+assert settings["User"] == pwd.getpwuid(os.getuid()).pw_name
+assert "Group" not in settings or settings["Group"] == str(os.getgid())
+assert home in shlex.split(settings["RequiresMountsFor"])
+PYUNIT
+assert_exit "$?" 0 "--systemd：ExecStart 指向实际安装文件，身份与挂载路径匹配"
+
+# 在同一安装目录执行启动脚本的配置读取部分，停在任何系统修改之前。
+stack_bin="$unit_prefix/bin"
+awk '/^export NODE_OPTIONS=/{exit} {print}' "$stack_bin/coinbase-stack-check.sh" > "$stack_bin/paths.sh"
+cat >> "$stack_bin/paths.sh" <<'STATUS'
+printf '%s\n' "$STATUS" "$KEY" "$PFX"
+STATUS
+out=$(CB_CONFIG="$CFG" bash "$stack_bin/paths.sh")
+assert_eq "$out" "$(printf '%s\n' "$HOME/.coinbase-stack-status.json" "$KEYF" "11111111-2222-3333-4444-555555555555")" "服务启动：状态文件在用户目录，读取安装时的密钥路径和组合"
+out=$(CB_CONFIG="$TESTDIR/missing.json" bash "$stack_bin/paths.sh")
+assert_eq "$out" "$(printf '%s\n' "$HOME/.coinbase-stack-status.json" "$HOME/cdp_api_key_ecdsa.json" "YOUR_PORTFOLIO_UUID")" "未配置时保留默认密钥路径，并跳过组合余额"
+
 # ---------- Node 版本守卫 ----------
 FAKE="$TESTDIR/fakebin"; mkdir -p "$FAKE"
 cat > "$FAKE/node" <<'FAKE_NODE'

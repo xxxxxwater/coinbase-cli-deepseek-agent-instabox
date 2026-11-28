@@ -15,27 +15,25 @@
 
 set -uo pipefail
 
-HOME_DIR=/data/home
-KEY=$HOME_DIR/cdp_api_key_ecdsa.json
+HOME_DIR=${HOME:-/data/home}
+export HOME="$HOME_DIR"
+KEY=${COINBASE_KEY_FILE:-$HOME_DIR/cdp_api_key_ecdsa.json}
 LOG=$HOME_DIR/.coinbase-stack.log
 STATUS=$HOME_DIR/.coinbase-stack-status.json
-# portfolio_id 的来源，按优先级：
-#   1) 环境变量 COINBASE_PORTFOLIO_ID（显式指定）
-#   2) 配置文件（cb-portfolio.sh --save / cb-config.sh set 写的那份）
-# 只认环境变量会让开机自检永远"跳过 balance"——明明配置里有，却假装没配，
-# 那样这条自检就成了摆设。
 PFX=${COINBASE_PORTFOLIO_ID:-}
-if [ -z "$PFX" ] && [ -f "$HOME_DIR/lib/config.sh" ]; then
-  # 显式指定配置文件：此刻 HOME 还没被改成 HOME_DIR，靠默认路径会读错地方
-  [ -n "${CB_CONFIG:-}" ] || export CB_CONFIG="$HOME_DIR/.config/coinbase-agent/config.json"
-  # shellcheck disable=SC1091
-  . "$HOME_DIR/lib/config.sh" 2>/dev/null && PFX=$(cb_portfolio_id 2>/dev/null || true)
-fi
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+for lib in "$HERE/lib/config.sh" "$HOME_DIR/lib/config.sh"; do
+  [ -r "$lib" ] || continue
+  # shellcheck source=lib/config.sh
+  . "$lib"
+  [ -n "$PFX" ] || PFX=$(cb_portfolio_id 2>/dev/null || true)
+  KEY=$(cb_get COINBASE_KEY_FILE key_file "$KEY")
+  break
+done
 [ -n "$PFX" ] || PFX="YOUR_PORTFOLIO_UUID"
 PFX_OK=1; [ "$PFX" = "YOUR_PORTFOLIO_UUID" ] && PFX_OK=0
 NODE_OPT='--dns-result-order=ipv4first'
 
-export HOME=$HOME_DIR
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export NODE_OPTIONS=$NODE_OPT
 

@@ -205,10 +205,33 @@ if [ "$WITH_SYSTEMD" -eq 1 ]; then
   UNIT_SRC="$HERE/systemd/coinbase-stack.service"
   [ -f "$UNIT_SRC" ] || die "找不到 $UNIT_SRC"
   TMP_UNIT=$(mktemp)
-  sed -e "s#/data/home#${HOME}#g" \
-      -e "s#/usr/local/bin#${BIN_DIR}#g" \
-      -e "s#^User=.*#User=$(id -un)#" \
-      "$UNIT_SRC" > "$TMP_UNIT"
+  python3 - "$UNIT_SRC" "$HOME" "$BIN_DIR" "$CFG" "$(id -un)" > "$TMP_UNIT" <<'PYUNIT'
+import json, os, sys
+source, home, bindir, cfg, user = sys.argv[1:]
+bindir = os.path.abspath(bindir)
+
+def quoted(value):
+    return json.dumps(value.replace("%", "%%"), ensure_ascii=False)
+
+script = os.path.join(bindir, "coinbase-stack-check.sh")
+with open(source, encoding="utf-8") as template:
+    for line in template:
+        line = line.rstrip("\n")
+        if line.startswith("ExecStart="):
+            line = "ExecStart=/bin/bash " + quoted(script.replace("$", "$$"))
+        elif line.startswith("RequiresMountsFor="):
+            line = "RequiresMountsFor=" + quoted(home) + " " + quoted(bindir)
+        elif line.startswith("Documentation="):
+            line = "Documentation=https://github.com/xxxxxwater/coinbase-cli-deepseek-agent-instabox/blob/main/docs/COINBASE-SETUP.md"
+        elif line.startswith("User="):
+            line = "User=" + user
+        elif line.startswith("Group="):
+            continue  # systemd 默认采用该用户的主组
+        elif line.startswith("Environment=HOME="):
+            line = "Environment=" + quoted("HOME=" + home)
+            print("Environment=" + quoted("CB_CONFIG=" + os.path.abspath(cfg)))
+        print(line)
+PYUNIT
   if [ "$ASSUME_YES" -eq 0 ]; then
     say "  将要写入 /etc/systemd/system/coinbase-stack.service："
     sed 's/^/    /' "$TMP_UNIT"

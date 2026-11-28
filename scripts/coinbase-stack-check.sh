@@ -66,8 +66,12 @@ if [ ! -e /usr/local/bin/coinbase ] && [ ! -e /usr/local/bin/coinbase-real.js ];
   # shellcheck disable=SC2024
   sudo -n npm install -g @coinbase/coinbase-cli >>"$LOG" 2>&1
 fi
-ver=$(timeout 60 coinbase --version 2>&1 | tr -d '\n')
-if [ -n "$ver" ]; then check 0 "cli($ver)"; else check 1 cli; fi
+if ver=$(timeout 60 coinbase --version 2>>"$LOG" | tr -d '\n') && [ -n "$ver" ]; then
+  check 0 "cli($ver)"
+else
+  ver=""
+  check 1 cli
+fi
 
 # ---------- 2.5 风控守卫是否还在原位 ----------
 # npm 升级会把 /usr/local/bin/coinbase 换回真二进制，守卫就没了 ——

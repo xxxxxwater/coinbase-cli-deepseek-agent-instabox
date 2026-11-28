@@ -84,26 +84,36 @@ _write_pkg_root() {
   printf '%s\n' "$r" | sudo -n tee "$PKG_ROOT_CACHE" >/dev/null 2>&1 || true
   sudo -n chmod 644 "$PKG_ROOT_CACHE" >/dev/null 2>&1 || true
 }
+restore_guard() {
+  local proxy_src="$HOME_DIR/bin/coinbase-mcp-proxy.mjs"
+  local proxy=/usr/local/bin/coinbase-mcp-proxy.mjs
+  local cli=/usr/local/bin/coinbase
+
+  if ! grep -q 'CB_GUARD_V1' "$cli" 2>/dev/null; then
+    # npm 可能刚更新了 CLI。保留新版本供守卫转发，不能把守卫本身当作备份。
+    if [ -x "$cli" ]; then
+      sudo -n mv -f "$cli" /usr/local/bin/coinbase-real.js || return 1
+    fi
+    sudo -n install -m 755 "$GUARD_SRC" "$cli" || return 1
+  fi
+
+  if [ -f "$proxy_src" ]; then
+    sudo -n install -m 644 "$proxy_src" "$proxy" || return 1
+  fi
+  [ -f "$proxy" ] && grep -q 'CB_GUARD_V1' "$cli"
+}
+
 if [ -f "$GUARD_SRC" ]; then
   if grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null \
      && [ -f /usr/local/bin/coinbase-mcp-proxy.mjs ]; then
     check 0 guard
+  elif restore_guard; then
+    _write_pkg_root
+    say "风控守卫与 MCP 代理已恢复"
+    check 0 "guard(restored)"
   else
-    say "风控守卫被覆盖了，正在恢复"
-    # 真程序必须叫 .js：这个 CLI 是 Node ESM 脚本，别的扩展名 node 会直接拒绝
-    # （ERR_UNKNOWN_FILE_EXTENSION），改名时踩过这个坑。
-    if [ -x /usr/local/bin/coinbase ]; then
-      sudo -n mv -f /usr/local/bin/coinbase /usr/local/bin/coinbase-real.js >/dev/null 2>&1
-    fi
-    PROXY_SRC="$HOME_DIR/bin/coinbase-mcp-proxy.mjs"
-    [ -f "$PROXY_SRC" ] && sudo -n install -m 644 "$PROXY_SRC" /usr/local/bin/coinbase-mcp-proxy.mjs >/dev/null 2>&1
-    if sudo -n install -m 755 "$GUARD_SRC" /usr/local/bin/coinbase >/dev/null 2>&1 \
-       && grep -q 'CB_GUARD_V1' /usr/local/bin/coinbase 2>/dev/null; then
-      _write_pkg_root
-      check 0 "guard(restored)"
-    else
-      check 1 guard
-    fi
+    say "风控守卫或 MCP 代理恢复失败"
+    check 1 guard
   fi
 fi
 
